@@ -1813,6 +1813,9 @@ class CorrelationTab(Tab):
         self.flm_features = model.ListVA()
         self.feature = None
 
+        self.sem_features.subscribe(self._on_features_changes, init=True)
+        self.flm_features.subscribe(self._on_features_changes, init=True)
+
 
         # bind keyboard for each panel
         panel.vp_secom_tl.canvas.Bind(wx.EVT_CHAR, self._on_char)
@@ -1869,33 +1872,56 @@ class CorrelationTab(Tab):
             # # features
             # logging.info(f"FEATURES: {self.tab_data_model.main.features.value}")
         else:
-            active_canvas.on_left_down(evt)            
+            active_canvas.on_left_down(evt)       # super event passthrough      
 
 
     def _on_char(self, evt):
 
         logging.info(f"Key: {evt.GetKeyCode()}")
-        if evt.GetKeyCode() == wx.WXK_DELETE:
+
+        _key = evt.GetKeyCode()
+        _shift_mod = evt.ShiftDown()
+        _ctrl_mod = evt.ControlDown()
+
+        dx = 10e-6
+        dy = 10e-6
+        dr = numpy.deg2rad(1)
+        dpx = 0.01
+
+        if _key == wx.WXK_DELETE:
             logging.info("DELETE CURRENT FEATURE")
 
             self._delete_current_feature()
 
-        if evt.GetKeyCode() == wx.WXK_SPACE:
+        if _key == wx.WXK_SPACE:
             logging.info("SPACE")
 
         # arrow keys
-        if evt.GetKeyCode() == wx.WXK_LEFT:
+        if _key == wx.WXK_LEFT:
             logging.info("LEFT")
-            self._move_current_feature(-10e-6, 0)
-        if evt.GetKeyCode() == wx.WXK_RIGHT:
+            if _shift_mod:
+                self._move_current_feature(0, 0, -dr, )
+            else:
+                self._move_current_feature(-dx, 0, 0, 0)
+        if _key == wx.WXK_RIGHT:
             logging.info("RIGHT")
-            self._move_current_feature(10e-6, 0)
-        if evt.GetKeyCode() == wx.WXK_UP:
+            if _shift_mod:
+                self._move_current_feature(0, 0, dr, 0)
+            else:
+                self._move_current_feature(dx, 0, 0, 0)
+        if _key == wx.WXK_UP:
+            
             logging.info("UP")
-            self._move_current_feature(0, 10e-6)
-        if evt.GetKeyCode() == wx.WXK_DOWN:
+            if _shift_mod:
+                self._move_current_feature(0, 0, 0, dpx)
+            else:
+                self._move_current_feature(0, dy, 0, 0)
+        if _key == wx.WXK_DOWN:
             logging.info("DOWN")
-            self._move_current_feature(0, -10e-6)
+            if _shift_mod:
+                self._move_current_feature(0, 0, 0, -dpx)
+            else:
+                self._move_current_feature(0, -dy, 0, 0)
 
 
     def _delete_current_feature(self):
@@ -1927,16 +1953,16 @@ class CorrelationTab(Tab):
         print(evt)
 
 
-    def _move_current_feature(self, dx, dy):
+    def _move_current_feature(self, dx, dy, dr=0, dpx=0):
         if self.feature is None:
             return
-        logging.info(f"move feature: {dx}, {dy}")
+        logging.info(f"move feature: {dx}, {dy}, {dr}")
         new_feature = self.feature
         new_feature.pos.value = (new_feature.pos.value[0] + dx, new_feature.pos.value[1] + dy, 0)
-        self._move_sem_image(new_feature)
+        self._move_sem_image(new_feature, dr , dpx)
 
     
-    def _move_sem_image(self, feature):
+    def _move_sem_image(self, feature, dr=0, dpx=0):
         self.feature = feature # TODO: set this when image is loaded...
 
         for s in self.tab_data_model.overviewStreams.value:
@@ -1945,6 +1971,12 @@ class CorrelationTab(Tab):
                     logging.info(f"SEM FEATURE: {self.feature}")
                     s.raw[0].metadata[model.MD_POS] = (self.feature.pos.value[0], self.feature.pos.value[1])
 
+                    # r = s.raw[0].metadata[model.MD_ROTATION] + dr
+                    s.raw[0].metadata[model.MD_ROTATION] += dr
+                    if dpx != 0.0:
+                        px, py = s.raw[0].metadata[model.MD_PIXEL_SIZE]
+                        dpx = 1.0 + dpx       
+                        s.raw[0].metadata[model.MD_PIXEL_SIZE] = (px*dpx, py*dpx)
                     
                     def updateImageInViews(s: StaticStream, views: list):
                         """force update the static stream in the selected views
@@ -1981,11 +2013,23 @@ class CorrelationTab(Tab):
 
         # TODO: make which image moves togglable
 
-        self.sem_features.value.append(features[-1])
+        # self.sem_features.value.append(features[-1])
 
         logging.info(f"Features: {get_features_dict(features)}")
         logging.info(f"SEM Features: {get_features_dict(self.sem_features.value)}")
         logging.info(f"FLM Features: {get_features_dict(self.flm_features.value)}")
+
+
+
+        if len(self.sem_features.value) > 3 and len(self.flm_features.value) > 3:
+        # and equal length
+            if len(self.sem_features.value) == len(self.flm_features.value):
+                logging.info(f"DO TRANSFORMATION")
+
+            else:
+                logging.info(f"NOT EQUAL LENGTH")
+        else:
+            logging.info(f"NOT ENOUGH FEATURES")
 
         # calculate the difference between sem and flm features
         # if len(self.sem_features.value) > 0 and len(self.flm_features.value) > 0:
@@ -2001,8 +2045,8 @@ class CorrelationTab(Tab):
         #     logging.info(f"dx: {dx}, dy: {dy}, dz: {dz}")
         #     logging.info(f"------------------------------------------------")
 
-        sem_feature = self.sem_features.value[-1].pos.value
-        self._move_sem_image(sem_feature)
+        # sem_feature = self.sem_features.value[-1].pos.value
+        # self._move_sem_image(sem_feature)
 
         # # from odemis.
         # import manual_overlay
@@ -2010,7 +2054,7 @@ class CorrelationTab(Tab):
 
     def _on_current_feature_changes(self, feature):
         logging.info(f"Feature changed to {feature}")
-
+ 
     def _on_view(self, view):
         """Hide hardware related sub-panels on the right when not in live stream"""
         # live = issubclass(view.stream_classes, odemis.acq.stream._live.LiveStream)
@@ -2158,7 +2202,7 @@ class CorrelationTab(Tab):
 
                 # tilt adjustment
                 t = md[model.MD_FAV_FM_POS_ACTIVE]["rx"]
-                b0 = 10e-3 # MAGIC_NUMBER
+                b0 = 15e-3 # MAGIC_NUMBER
                 dy = b0 * numpy.sin(t)
 
                 logging.info(f"tilt adjustment: {t}, {b0}, {dy}")
