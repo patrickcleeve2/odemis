@@ -77,7 +77,7 @@ from odemis.acq.stream import OpticalStream, SpectrumStream, TemporalSpectrumStr
     ScannedTCSettingsStream, SinglePointSpectrumProjection, LineSpectrumProjection, \
     PixelTemporalSpectrumProjection, SinglePointTemporalProjection, \
     ScannedTemporalSettingsStream, SinglePointAngularProjection, PixelAngularSpectrumProjection, \
-    ARRawProjection, ARPolarimetryProjection, StaticStream
+    ARRawProjection, ARPolarimetryProjection, StaticStream, StaticSEMStream, StaticFluoStream
 from odemis.driver.actuator import ConvertStage
 from odemis.gui.comp.buttons import BTN_TOGGLE_OFF, BTN_TOGGLE_PROGRESS, BTN_TOGGLE_COMPLETE
 from odemis.gui.comp.canvas import CAN_ZOOM
@@ -1736,6 +1736,510 @@ class SparcAcquisitionTab(Tab):
             return 1
         else:
             return None
+
+
+class CorrelationTab(Tab):
+
+    def __init__(self, name, button, panel, main_frame, main_data):
+        """
+        :type name: str
+        :type button: odemis.gui.comp.buttons.TabButton
+        :type panel: wx._windows.Panel
+        :type main_frame: odemis.gui.main_xrc.xrcfr_main
+        :type main_data: odemis.gui.model.MainGUIData
+        """
+
+        tab_data = guimod.CryoCorrelationGUIData(main_data)
+        super(CorrelationTab, self).__init__(
+            name, button, panel, main_frame, tab_data)
+        # self.set_label("LOCALIZATION")
+
+        self.main_data = main_data
+
+        # First we create the views, then the streams
+        vpv = self._create_views(main_data, panel.pnl_secom_grid.viewports)
+
+        # Order matters!
+        self.view_controller = viewcont.ViewPortController(tab_data, panel, vpv)
+
+        # Connect the view selection buttons
+        buttons = collections.OrderedDict([
+            (panel.btn_secom_view_all,
+                (None, panel.lbl_secom_view_all)),
+            (panel.btn_secom_view_tl,
+                (panel.vp_secom_tl, panel.lbl_secom_view_tl)),
+            (panel.btn_secom_view_tr,
+                (panel.vp_secom_tr, panel.lbl_secom_view_tr)),
+            (panel.btn_secom_view_bl,
+                (panel.vp_secom_bl, panel.lbl_secom_view_bl)),
+            (panel.btn_secom_view_br,
+                (panel.vp_secom_br, panel.lbl_secom_view_br)),
+        ])
+
+        # remove the play overlay from all streams
+        panel.vp_secom_tl.canvas.remove_view_overlay(panel.vp_secom_tl.canvas.play_overlay)
+        panel.vp_secom_tr.canvas.remove_view_overlay(panel.vp_secom_tr.canvas.play_overlay)
+        panel.vp_secom_br.canvas.remove_view_overlay(panel.vp_secom_br.canvas.play_overlay)
+        panel.vp_secom_bl.canvas.remove_view_overlay(panel.vp_secom_bl.canvas.play_overlay)
+
+
+        # Add a sample overlay to each view (if we have information)
+        if main_data.sample_centers:
+            for vp in (panel.vp_secom_tl, panel.vp_secom_tr, panel.vp_secom_bl, panel.vp_secom_br):
+                vp.show_sample_overlay(main_data.sample_centers, main_data.sample_radius)
+
+        # Default view is the Overview
+        tab_data.focussedView.value = panel.vp_secom_tl.view
+        tab_data.focussedView.subscribe(self._on_view, init=True)
+
+        self._view_selector = viewcont.ViewButtonController(
+            tab_data,
+            panel,
+            buttons,
+            panel.pnl_secom_grid.viewports
+        )
+
+        self._streambar_controller = streamcont.StreamBarController(
+            tab_data,
+            panel.pnl_secom_streams,
+            static=True,
+        )
+
+        self._streambar_controller.add_action("From file...", self._on_add_file)
+        self._streambar_controller.add_action("From tileset...", self._on_add_tileset)
+
+        self.selected_feature = None
+        self.sem_features = model.ListVA()
+        self.flm_features = model.ListVA()
+        self.feature = None
+
+
+        # bind keyboard for each panel
+        panel.vp_secom_tl.canvas.Bind(wx.EVT_CHAR, self._on_char)
+        panel.vp_secom_tr.canvas.Bind(wx.EVT_CHAR, self._on_char)
+        panel.vp_secom_bl.canvas.Bind(wx.EVT_CHAR, self._on_char)
+        panel.vp_secom_br.canvas.Bind(wx.EVT_CHAR, self._on_char)
+
+        # bind mouse down for each panel
+        panel.vp_secom_tl.canvas.Bind(wx.EVT_LEFT_DOWN, self._on_mouse_down)
+        panel.vp_secom_tr.canvas.Bind(wx.EVT_LEFT_DOWN, self._on_mouse_down)
+        panel.vp_secom_bl.canvas.Bind(wx.EVT_LEFT_DOWN, self._on_mouse_down)
+        panel.vp_secom_br.canvas.Bind(wx.EVT_LEFT_DOWN, self._on_mouse_down)
+
+        # self._feature_panel_controller = CryoFeatureController(tab_data, panel, self)
+        self.conf = conf.get_acqui_conf()
+
+        # Toolbar
+        self.tb = panel.secom_toolbar
+        for t in TOOL_ORDER:
+            if t in tab_data.tool.choices:
+                self.tb.add_tool(t, tab_data.tool)
+        # Add fit view to content to toolbar
+        self.tb.add_tool(TOOL_ACT_ZOOM_FIT, self.view_controller.fitViewToContent)       
+
+        if self.main_data.role == "meteor":
+            # The stage is in the FM referential, but we care about the stage-bare
+            # in the SEM referential to move between positions
+            self._allowed_targets = [FM_IMAGING, SEM_IMAGING]
+            self._stage = self.tab_data_model.main.stage_bare
+
+        main_data.is_acquiring.subscribe(self._on_acquisition, init=True)
+
+    def _on_mouse_down(self, evt):
+        logging.info("MOUSE DOWN")
+        # get active canvas
+        active_canvas = evt.GetEventObject()
+        logging.info(f"ACTIVE CANVAS: {active_canvas}")
+ 
+        # check if shift is pressed
+        if evt.ShiftDown():
+            # get the position of the mouse
+            pos = evt.GetPosition()
+            logging.info(f"SHIFT PRESSED: MOUSE POSITION: {pos}")
+
+            p_pos = active_canvas.view_to_phys(pos, active_canvas.get_half_buffer_size())
+
+            from odemis.acq.feature import CryoFeature
+            feature = CryoFeature("test", p_pos[0], p_pos[1], 0)
+
+            self._move_sem_image(feature)
+
+            # self.tab_data_model.main.features.value.append(feature)
+            # logging.info(f"PHYSICAL POSITION: {p_pos}")
+            # # features
+            # logging.info(f"FEATURES: {self.tab_data_model.main.features.value}")
+        else:
+            active_canvas.on_left_down(evt)            
+
+
+    def _on_char(self, evt):
+
+        logging.info(f"Key: {evt.GetKeyCode()}")
+        if evt.GetKeyCode() == wx.WXK_DELETE:
+            logging.info("DELETE CURRENT FEATURE")
+
+            self._delete_current_feature()
+
+        if evt.GetKeyCode() == wx.WXK_SPACE:
+            logging.info("SPACE")
+
+        # arrow keys
+        if evt.GetKeyCode() == wx.WXK_LEFT:
+            logging.info("LEFT")
+            self._move_current_feature(-10e-6, 0)
+        if evt.GetKeyCode() == wx.WXK_RIGHT:
+            logging.info("RIGHT")
+            self._move_current_feature(10e-6, 0)
+        if evt.GetKeyCode() == wx.WXK_UP:
+            logging.info("UP")
+            self._move_current_feature(0, 10e-6)
+        if evt.GetKeyCode() == wx.WXK_DOWN:
+            logging.info("DOWN")
+            self._move_current_feature(0, -10e-6)
+
+
+    def _delete_current_feature(self):
+        
+        current_feature = self.tab_data_model.main.currentFeature.value
+        self.tab_data_model.main.features.value.remove(current_feature)
+
+        # remove sem/flm features
+        if current_feature in self.sem_features.value:
+            self.sem_features.value.remove(current_feature)
+        if current_feature in self.flm_features.value:
+            self.flm_features.value.remove(current_feature)
+
+
+
+    def _on_enter_sem_overview(self, evt):
+
+        self.selected_feature = "SEM"
+        print(evt)
+
+    def _on_enter_flm_overview(self, evt):
+
+        self.selected_feature = "FLM"
+        print(evt)
+
+    def _on_enter_overlay(self, evt):
+
+        self.selected_feature = "Overlay"   
+        print(evt)
+
+
+    def _move_current_feature(self, dx, dy):
+        if self.feature is None:
+            return
+        logging.info(f"move feature: {dx}, {dy}")
+        new_feature = self.feature
+        new_feature.pos.value = (new_feature.pos.value[0] + dx, new_feature.pos.value[1] + dy, 0)
+        self._move_sem_image(new_feature)
+
+    
+    def _move_sem_image(self, feature):
+        self.feature = feature # TODO: set this when image is loaded...
+
+        for s in self.tab_data_model.overviewStreams.value:
+            if isinstance(s, StaticSEMStream):
+            
+                    logging.info(f"SEM FEATURE: {self.feature}")
+                    s.raw[0].metadata[model.MD_POS] = (self.feature.pos.value[0], self.feature.pos.value[1])
+
+                    
+                    def updateImageInViews(s: StaticStream, views: list):
+                        """force update the static stream in the selected views
+                        param: s (StaticStream) the static stream to update
+                        param: views (list[View]) the list of views to update"""
+                        v: guimod.View 
+                        for v in views:
+                            for sp in v.stream_tree.getProjections():  # stream or projection
+                                if isinstance(sp, acqstream.DataProjection):
+                                    st = sp.stream
+                                else:
+                                    st = sp
+                                if st is s:
+                                    sp._shouldUpdateImage()
+
+                    # update the image in the views
+                    views = self.tab_data_model.views.value
+                    updateImageInViews(s, views)
+
+    def _on_features_changes(self, features):
+        from odemis.acq.feature import get_features_dict
+        focused_view = self.tab_data_model.focussedView.value
+
+        # check if features is empty
+        if not features:
+            return
+        # if focused_view == self.panel.vp_secom_tl.view:
+        #     self.selected_feature = "SEM"
+        # elif focused_view == self.panel.vp_secom_tr.view:
+        #     self.selected_feature = "FLM"
+        #     self.flm_features.value.append(features[-1])
+        # else:
+        #     self.selected_feature = "Overlay"
+
+        # TODO: make which image moves togglable
+
+        self.sem_features.value.append(features[-1])
+
+        logging.info(f"Features: {get_features_dict(features)}")
+        logging.info(f"SEM Features: {get_features_dict(self.sem_features.value)}")
+        logging.info(f"FLM Features: {get_features_dict(self.flm_features.value)}")
+
+        # calculate the difference between sem and flm features
+        # if len(self.sem_features.value) > 0 and len(self.flm_features.value) > 0:
+        #     sem_feature = self.sem_features.value[-1]
+        #     flm_feature = self.flm_features.value[-1]
+
+        #     # calculate the difference between sem and flm features
+        #     dx = sem_feature.pos.value[0] - flm_feature.pos.value[0]
+        #     dy = sem_feature.pos.value[1] - flm_feature.pos.value[1]
+        #     dz = sem_feature.pos.value[2] - flm_feature.pos.value[2]
+
+        #     logging.info(f"----------------DIFFERENCE----------------------")
+        #     logging.info(f"dx: {dx}, dy: {dy}, dz: {dz}")
+        #     logging.info(f"------------------------------------------------")
+
+        sem_feature = self.sem_features.value[-1].pos.value
+        self._move_sem_image(sem_feature)
+
+        # # from odemis.
+        # import manual_overlay
+        # manual_overlay.update_overlay(self.tab_data_model.main, self.tab_data_model.overviewStreams.value)
+
+    def _on_current_feature_changes(self, feature):
+        logging.info(f"Feature changed to {feature}")
+
+    def _on_view(self, view):
+        """Hide hardware related sub-panels on the right when not in live stream"""
+        # live = issubclass(view.stream_classes, odemis.acq.stream._live.LiveStream)
+        self.panel.fp_secom_streams.Show(True)
+
+    @property
+    def settingsbar_controller(self):
+        return self._settingbar_controller
+
+    @property
+    def streambar_controller(self):
+        return self._streambar_controller
+
+    def _create_views(self, main_data, viewports):
+        """
+        Create views depending on the actual hardware present
+        return OrderedDict: as needed for the ViewPortController
+        """
+        # Acquired data at the top, live data at the bottom
+        vpv = collections.OrderedDict([
+            (viewports[0],  # focused view
+             {
+                 "cls": guimod.FixedOverviewView,
+                 "stage": main_data.stage,
+                 "name": "SEM Overview",
+                 "stream_classes": StaticSEMStream,
+              }),
+            (viewports[1],
+             {"name": "FLM Overview",
+              "cls": guimod.FixedOverviewView,
+              "stage": main_data.stage,
+              "stream_classes": StaticFluoStream,
+              }),
+            (viewports[2],
+             {"name": "Overlay 1",
+              "cls": guimod.FeatureOverviewView,
+              "stream_classes": StaticStream,
+              }),
+            (viewports[3],
+             {"name": "Overlay 2",
+              "cls": guimod.FeatureOverviewView,
+              "stage": main_data.stage,
+              "stream_classes": StaticStream,
+              }),
+        ])
+
+        return vpv
+
+    # from analysis/gallery tab
+    def _on_add_file(self):
+        """
+        Called when the user requests to extend the current acquisition with
+        an extra file.
+        """
+        # If no acquisition file, behave as just opening a file normally
+        # extend = bool(self.tab_data_model.streams.value)
+        self.select_acq_file(True)
+
+    def _on_add_tileset(self):
+        self.select_acq_file(extend=True, tileset=True)
+
+
+    def load_tileset(self, filenames, extend=False):
+        data = open_files_and_stitch(filenames) # TODO: allow user defined registration / weave methods
+        self.load_overview_data(data)
+
+    def load_data(self, filename, fmt=None, extend=False):
+        data = open_acquisition(filename, fmt)
+        self.load_overview_data(data)
+
+    def select_acq_file(self, extend=False, tileset: bool = False):
+        """ Open an image file using a file dialog box
+
+        extend (bool): if False, will ensure that the previous streams are closed.
+        If True, will add the new file to the current streams opened.
+        tileset (bool): if True, open files as tileset and stitch together
+        return (boolean): True if the user did pick a file, False if it was
+        cancelled.
+        """
+        # Find the available formats (and corresponding extensions)
+        formats_to_ext = dataio.get_available_formats(os.O_RDONLY)
+
+        # TODO: fix properly
+        # fi = self.tab_data_model.acq_fileinfo.value
+         
+
+        # if fi and fi.file_name:
+        #     path, _ = os.path.split(fi.file_name)
+        # else:
+        config = get_acqui_conf()
+        path = config.last_path
+
+        wildcards, formats = guiutil.formats_to_wildcards(formats_to_ext, include_all=True)
+        dialog = wx.FileDialog(self.panel,
+                            message="Choose a file to load",
+                            defaultDir=path,
+                            defaultFile="",
+                            style=wx.FD_OPEN | wx.FD_FILE_MUST_EXIST | wx.FD_MULTIPLE,
+                            wildcard=wildcards)
+
+        # Show the dialog and check whether is was accepted or cancelled
+        if dialog.ShowModal() != wx.ID_OK:
+            return False
+
+        # Detect the format to use
+        fmt = formats[dialog.GetFilterIndex()]
+
+        if tileset:
+            filenames = dialog.GetPaths()
+            self.load_tileset(filenames, extend=extend)
+        else:
+            for filename in dialog.GetPaths():
+                if extend:
+                    logging.debug("Extending the streams with file %s", filename)
+                else:
+                    logging.debug("Current file set to %s", filename)
+
+                self.load_data(filename, fmt, extend=extend)
+                extend = True  # If multiple files loaded, the first one is considered main one
+
+        return True
+    
+    @call_in_wx_main
+    def load_overview_data(self, data):
+        # Create streams from data
+        streams = data_to_static_streams(data)
+        bbox = (None, None, None, None)  # ltrb in m
+        for s in streams:
+            s.name.value = "Overview " + s.name.value
+            # Add the static stream to the streams list of the model and also to the overviewStreams to easily
+            # distinguish between it and other acquired streams
+
+
+            p = s.raw[0].metadata.get(model.MD_POS, (0, 0))
+            r = s.raw[0].metadata.get(model.MD_ROTATION, 0)
+            
+            logging.info(f"p: {p}, r: {r}")
+            if isinstance(s, StaticSEMStream):
+                pos = {"x": p[0], "y": p[1], "rz": r}
+                pm = self.tab_data_model.main.posture_manager
+                trans_pos = pm._transformFromSEMToMeteor(pos)
+                md = pm.stage.getMetadata()
+                logging.info(f"metadata: {md}")
+                logging.info(f"pos: {pos}, trans: {trans_pos}")
+
+                # tilt adjustment
+                t = md[model.MD_FAV_FM_POS_ACTIVE]["rx"]
+                b0 = 10e-3 # MAGIC_NUMBER
+                dy = b0 * numpy.sin(t)
+
+                logging.info(f"tilt adjustment: {t}, {b0}, {dy}")
+
+                # s.raw[0].metadata[model.MD_POS_COR] = md[model.MD_POS_COR]
+                s.raw[0].metadata[model.MD_POS] = (trans_pos["x"], trans_pos["y"]- dy)
+                # s.raw[0].metadata[model.MD_ROTATION] = trans_pos["rz"]
+
+
+            self.tab_data_model.overviewStreams.value.append(s)
+            self.tab_data_model.streams.value.insert(0, s)
+            self._streambar_controller.addStream(s, add_to_view=True, play=False)
+            
+            # Compute the total bounding box
+            try:
+                s_bbox = s.getBoundingBox()
+            except ValueError:
+                continue  # Stream has no data (yet)
+            if bbox[0] is None:
+                bbox = s_bbox
+            else:
+                bbox = (min(bbox[0], s_bbox[0]), min(bbox[1], s_bbox[1]),
+                        max(bbox[2], s_bbox[2]), max(bbox[3], s_bbox[3]))
+
+
+        # Recenter to the new content only
+        if bbox[0] is not None: 
+            if isinstance(s, StaticSEMStream):
+                self.panel.vp_secom_tl.canvas.fit_to_bbox(bbox)
+            if isinstance(s, StaticFluoStream):
+                self.panel.vp_secom_tr.canvas.fit_to_bbox(bbox)
+
+
+    def _on_acquisition(self, is_acquiring):
+        # When acquiring, the tab is automatically disabled and should be left as-is
+        # In particular, that's the state when moving between positions in the
+        # Chamber tab, and the tab should wait for the move to be complete before
+        # actually be enabled.
+        if is_acquiring:
+            self._stage.position.unsubscribe(self._on_stage_pos)
+        else:
+            self._stage.position.subscribe(self._on_stage_pos, init=True)
+
+    # role -> tooltip message
+    DISABLED_TAB_TOOLTIP = {
+        "meteor": "Correlation can only be performed in FM mode",
+    }
+
+    def _on_stage_pos(self, pos):
+        """
+        Called when the stage is moved, enable the tab if position is imaging mode, disable otherwise
+        :param pos: (dict str->float or None) updated position of the stage
+        """
+        guiutil.enable_tab_on_stage_position(
+            self.button,
+            self.main_data.posture_manager,
+            self._allowed_targets,
+            tooltip=self.DISABLED_TAB_TOOLTIP.get(self.main_data.role)
+        )
+
+    def terminate(self):
+        super(CorrelationTab, self).terminate()
+        self._stage.position.unsubscribe(self._on_stage_pos)
+        # make sure the streams are stopped
+        for s in self.tab_data_model.streams.value:
+            s.is_active.value = False
+
+    @classmethod
+    def get_display_priority(cls, main_data):
+        if main_data.role in ("enzel", "meteor", "mimas"):
+            return 2
+        else:
+            return None
+
+    def Show(self, show=True):
+        assert (show != self.IsShown())  # we assume it's only called when changed
+        super(CorrelationTab, self).Show(show)
+
+        if not show:  # if localization tab is not chosen
+            # pause streams when not displayed
+            self._streambar_controller.pauseStreams()
 
 
 class FastEMAcquisitionTab(Tab):

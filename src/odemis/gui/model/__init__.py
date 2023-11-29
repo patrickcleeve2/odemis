@@ -876,6 +876,25 @@ class CryoLocalizationGUIData(CryoGUIData):
                     config.pj_last_path, config.fn_ptn,
                     config.last_extension,
                     config.fn_count)
+        
+class CryoCorrelationGUIData(CryoGUIData):
+    """ Represent an interface used to only show the current data from the microscope.
+
+    It it used for handling CryoSECOM systems.
+
+    """
+
+    def __init__(self, main):
+        super().__init__(main)
+
+        # Current tool selected (from the toolbar)
+        tools = {TOOL_NONE} #, TOOL_RULER, TOOL_FEATURE}
+        # Update the tool selection with the new tool list
+        self.tool.choices = tools
+        # the static overview map streams, among all streams in .streams
+        self.overviewStreams = model.ListVA()
+
+
 
 
 class SparcAcquisitionGUIData(MicroscopyGUIData):
