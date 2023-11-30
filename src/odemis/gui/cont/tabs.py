@@ -1826,15 +1826,12 @@ class CorrelationTab(Tab):
         # TODO: export images
         # self.export_controller = exportcont.ExportController(tab_data, main_frame, panel, vpv)
 
-        self.selected_feature = None
+        self.sem_stream = None
         self.sem_features = model.ListVA()
         self.flm_features = model.ListVA()
-        self.feature = None
-        self.sem_stream = None
 
         self.sem_features.subscribe(self._on_features_changes, init=True)
         self.flm_features.subscribe(self._on_features_changes, init=True)
-
 
         # bind keyboard for each panel
         panel.vp_secom_tl.canvas.Bind(wx.EVT_CHAR, self._on_char)
@@ -1889,63 +1886,118 @@ class CorrelationTab(Tab):
             logging.info(f"PHYSICAL POSITION: {p_pos}")
 
             self._move_stream_to_pos(p_pos)
+        elif evt.ControlDown():
+
+            # add a feature to canvas
+            pos = evt.GetPosition()
+
+            p_pos = active_canvas.view_to_phys(pos, active_canvas.get_half_buffer_size())
+
+            logging.info(f"FEATURE POSITION: {p_pos}")
+            
+            # add a feature to the canvas
+            if active_canvas == self.panel.vp_secom_tl.canvas:
+                self._add_feature(p_pos, "SEM")
+            elif active_canvas == self.panel.vp_secom_tr.canvas:
+                self._add_feature(p_pos, "FLM")
+            else:
+                logging.info("No feature added, wrong canvas")
+
         else:
             active_canvas.on_left_down(evt)       # super event passthrough      
 
+    def _add_feature(self, pos: tuple, feature_type: str):
+        
+        from odemis.acq.feature import CryoFeature
+        
+        _num = len(self.sem_features.value) if feature_type == "SEM" else len(self.flm_features.value)
+
+        f = CryoFeature(name=f"{feature_type} Feature {_num}", 
+                            x=pos[0], y=pos[1], z=0)
+        if feature_type == "SEM":
+            self.sem_features.value.append(f)
+        elif feature_type == "FLM":
+            self.flm_features.value.append(f)
+        else:
+            logging.info("No feature added, wrong feature type")
+            return
+        
+        # show?
+        self.tab_data_model.main.features.value.append(f)
 
     def _on_char(self, evt):
-
-        # TODO: clean this up better
-        logging.info(f"Key: {evt.GetKeyCode()}")
 
         _key = evt.GetKeyCode()
         _shift_mod = evt.ShiftDown()
         _ctrl_mod = evt.ControlDown()
+        _canvas = evt.GetEventObject()
+
+        # TODO: clean this up better
+        logging.info(f"Key: {evt.GetKeyCode()}, Shift: {evt.ShiftDown()}, Ctrl: {evt.ControlDown()}")
+
+        if _key == wx.WXK_SPACE:
+            # test dialog
+            # if self.sem_stream is None:       
+            #     box = wx.MessageDialog(self.main_frame,
+            #             "No stream is present, so it's not possible to modify the alignment.",
+            #             "No stream", wx.OK | wx.ICON_STOP)
+            #     box.ShowModal()
+            #     box.Destroy()
+            #     return
+            from odemis.acq.feature import get_features_dict
+            logging.info(f"SEM Features: {get_features_dict(self.sem_features.value)}")
+            logging.info(f"FLM Features: {get_features_dict(self.flm_features.value)}")
+
+
+        if _key == wx.WXK_DELETE:
+            # delete all features from canvas
+            if _canvas == self.panel.vp_secom_tl.canvas:
+                feature_type = "SEM"
+            elif _canvas == self.panel.vp_secom_tr.canvas:
+                feature_type = "FLM"
+            else:
+                return
+            self._delete_features(feature_type)
+
+        # arrow keys
 
         dx = 1e-6
         dy = 1e-6
         dr = numpy.deg2rad(0.5)
         dpx = 0.01
 
-        # if _key == wx.WXK_DELETE:
-        #     logging.info("DELETE CURRENT FEATURE")
-
-        #     self._delete_current_feature()
-
-        # if _key == wx.WXK_SPACE:
-        #     logging.info("SPACE")
-
-
-
-
-
-        # arrow keys
         if _key == wx.WXK_LEFT:
-            logging.info("LEFT")
             if _shift_mod:
                 self._move_sem_image(0, 0, -dr, )
             else:
                 self._move_sem_image(-dx, 0, 0, 0)
         if _key == wx.WXK_RIGHT:
-            logging.info("RIGHT")
             if _shift_mod:
                 self._move_sem_image(0, 0, dr, 0)
             else:
                 self._move_sem_image(dx, 0, 0, 0)
         if _key == wx.WXK_UP:
-            
-            logging.info("UP")
             if _shift_mod:
                 self._move_sem_image(0, 0, 0, dpx)
             else:
                 self._move_sem_image(0, dy, 0, 0)
         if _key == wx.WXK_DOWN:
-            logging.info("DOWN")
             if _shift_mod:
                 self._move_sem_image(0, 0, 0, -dpx)
             else:
                 self._move_sem_image(0, -dy, 0, 0)
 
+    def _delete_features(self, feature_type: str):
+
+        # remove all features from canvas
+        if feature_type == "SEM":
+            while len(self.sem_features.value) > 0:
+                self.sem_features.value.pop()
+        elif feature_type == "FLM":
+            while len(self.flm_features.value) > 0:
+                self.flm_features.value.pop()
+        else:
+            logging.info("No feature deleted, wrong feature type")
 
     def _delete_current_feature(self):
         
@@ -1957,23 +2009,6 @@ class CorrelationTab(Tab):
             self.sem_features.value.remove(current_feature)
         if current_feature in self.flm_features.value:
             self.flm_features.value.remove(current_feature)
-
-
-
-    def _on_enter_sem_overview(self, evt):
-
-        self.selected_feature = "SEM"
-        print(evt)
-
-    def _on_enter_flm_overview(self, evt):
-
-        self.selected_feature = "FLM"
-        print(evt)
-
-    def _on_enter_overlay(self, evt):
-
-        self.selected_feature = "Overlay"   
-        print(evt)
     
     def _move_sem_image(self, dx, dy, dr=0, dpx=0):
         
@@ -2029,39 +2064,33 @@ class CorrelationTab(Tab):
         logging.info(f"OFFSET: {dx}, {dy}")
         self._move_sem_image(dx=dx, dy=dy, dr=0, dpx=0)
 
+        # TODO: make which image moves togglable
+        
         # self.sem_stream.raw[0].metadata[model.MD_POS_COR] = (nx, ny)    
         # updateImageInViews(self.sem_stream, self.tab_data_model.views.value)
 
 
     def _on_features_changes(self, features):
         from odemis.acq.feature import get_features_dict
-        focused_view = self.tab_data_model.focussedView.value
 
         # check if features is empty
         if not features:
             return
-        # if focused_view == self.panel.vp_secom_tl.view:
-        #     self.selected_feature = "SEM"
-        # elif focused_view == self.panel.vp_secom_tr.view:
-        #     self.selected_feature = "FLM"
-        #     self.flm_features.value.append(features[-1])
-        # else:
-        #     self.selected_feature = "Overlay"
-
-        # TODO: make which image moves togglable
-
-        # self.sem_features.value.append(features[-1])
-
-        logging.info(f"Features: {get_features_dict(features)}")
+        
         logging.info(f"SEM Features: {get_features_dict(self.sem_features.value)}")
         logging.info(f"FLM Features: {get_features_dict(self.flm_features.value)}")
 
+        logging.info(f"SEM FEATURES: {len(self.sem_features.value)}")
+        logging.info(f"FLM FEATURES: {len(self.flm_features.value)}")
 
-
-        if len(self.sem_features.value) > 3 and len(self.flm_features.value) > 3:
+        if len(self.sem_features.value) >= 3 and len(self.flm_features.value) >= 3:
         # and equal length
             if len(self.sem_features.value) == len(self.flm_features.value):
                 logging.info(f"DO TRANSFORMATION")
+
+                # TODO: implement
+
+
 
             else:
                 logging.info(f"NOT EQUAL LENGTH")
@@ -2081,13 +2110,6 @@ class CorrelationTab(Tab):
         #     logging.info(f"----------------DIFFERENCE----------------------")
         #     logging.info(f"dx: {dx}, dy: {dy}, dz: {dz}")
         #     logging.info(f"------------------------------------------------")
-
-        # sem_feature = self.sem_features.value[-1].pos.value
-        # self._move_sem_image(sem_feature)
-
-        # # from odemis.
-        # import manual_overlay
-        # manual_overlay.update_overlay(self.tab_data_model.main, self.tab_data_model.overviewStreams.value)
 
     def _on_current_feature_changes(self, feature):
         logging.info(f"Feature changed to {feature}")
