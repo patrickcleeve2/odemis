@@ -1738,6 +1738,20 @@ class SparcAcquisitionTab(Tab):
             return None
 
 
+def updateImageInViews(s: StaticStream, views: list):
+    """force update the static stream in the selected views
+    param: s (StaticStream) the static stream to update
+    param: views (list[View]) the list of views to update"""
+    v: guimod.View 
+    for v in views:
+        for sp in v.stream_tree.getProjections():  # stream or projection
+            if isinstance(sp, acqstream.DataProjection):
+                st = sp.stream
+            else:
+                st = sp
+            if st is s:
+                sp._shouldUpdateImage()
+
 class CorrelationTab(Tab):
 
     def __init__(self, name, button, panel, main_frame, main_data):
@@ -1808,10 +1822,15 @@ class CorrelationTab(Tab):
         self._streambar_controller.add_action("From file...", self._on_add_file)
         self._streambar_controller.add_action("From tileset...", self._on_add_tileset)
 
+
+        # TODO: export images
+        # self.export_controller = exportcont.ExportController(tab_data, main_frame, panel, vpv)
+
         self.selected_feature = None
         self.sem_features = model.ListVA()
         self.flm_features = model.ListVA()
         self.feature = None
+        self.sem_stream = None
 
         self.sem_features.subscribe(self._on_features_changes, init=True)
         self.flm_features.subscribe(self._on_features_changes, init=True)
@@ -1856,27 +1875,27 @@ class CorrelationTab(Tab):
  
         # check if shift is pressed
         if evt.ShiftDown():
+            
+            # only move if the sem stream is loaded
+            if self.sem_stream is None:
+                return
+                        
             # get the position of the mouse
             pos = evt.GetPosition()
             logging.info(f"SHIFT PRESSED: MOUSE POSITION: {pos}")
 
             p_pos = active_canvas.view_to_phys(pos, active_canvas.get_half_buffer_size())
 
-            from odemis.acq.feature import CryoFeature
-            feature = CryoFeature("test", p_pos[0], p_pos[1], 0)
+            logging.info(f"PHYSICAL POSITION: {p_pos}")
 
-            self._move_sem_image(feature)
-
-            # self.tab_data_model.main.features.value.append(feature)
-            # logging.info(f"PHYSICAL POSITION: {p_pos}")
-            # # features
-            # logging.info(f"FEATURES: {self.tab_data_model.main.features.value}")
+            self._move_stream_to_pos(p_pos)
         else:
             active_canvas.on_left_down(evt)       # super event passthrough      
 
 
     def _on_char(self, evt):
 
+        # TODO: clean this up better
         logging.info(f"Key: {evt.GetKeyCode()}")
 
         _key = evt.GetKeyCode()
@@ -1900,28 +1919,28 @@ class CorrelationTab(Tab):
         if _key == wx.WXK_LEFT:
             logging.info("LEFT")
             if _shift_mod:
-                self._move_current_feature(0, 0, -dr, )
+                self._move_sem_image(0, 0, -dr, )
             else:
-                self._move_current_feature(-dx, 0, 0, 0)
+                self._move_sem_image(-dx, 0, 0, 0)
         if _key == wx.WXK_RIGHT:
             logging.info("RIGHT")
             if _shift_mod:
-                self._move_current_feature(0, 0, dr, 0)
+                self._move_sem_image(0, 0, dr, 0)
             else:
-                self._move_current_feature(dx, 0, 0, 0)
+                self._move_sem_image(dx, 0, 0, 0)
         if _key == wx.WXK_UP:
             
             logging.info("UP")
             if _shift_mod:
-                self._move_current_feature(0, 0, 0, dpx)
+                self._move_sem_image(0, 0, 0, dpx)
             else:
-                self._move_current_feature(0, dy, 0, 0)
+                self._move_sem_image(0, dy, 0, 0)
         if _key == wx.WXK_DOWN:
             logging.info("DOWN")
             if _shift_mod:
-                self._move_current_feature(0, 0, 0, -dpx)
+                self._move_sem_image(0, 0, 0, -dpx)
             else:
-                self._move_current_feature(0, -dy, 0, 0)
+                self._move_sem_image(0, -dy, 0, 0)
 
 
     def _delete_current_feature(self):
@@ -1951,50 +1970,64 @@ class CorrelationTab(Tab):
 
         self.selected_feature = "Overlay"   
         print(evt)
-
-
-    def _move_current_feature(self, dx, dy, dr=0, dpx=0):
-        if self.feature is None:
+    
+    def _move_sem_image(self, dx, dy, dr=0, dpx=0):
+        
+        if self.sem_stream is None:
             return
-        logging.info(f"move feature: {dx}, {dy}, {dr}")
-        new_feature = self.feature
-        new_feature.pos.value = (new_feature.pos.value[0] + dx, new_feature.pos.value[1] + dy, 0)
-        self._move_sem_image(new_feature, dr , dpx)
+        
+        logging.info(f"move feature: {dx}, {dy}, {dr}, {dpx}")
+    
+        s = self.sem_stream
+
+        # translation
+        x, y = s.raw[0].metadata[model.MD_POS_COR]
+        s.raw[0].metadata[model.MD_POS_COR] = (x - dx, y - dy) # correlation direction is reversed
+
+        # rotation
+        rotation = s.raw[0].metadata.get(model.MD_ROTATION_COR, 0)
+        s.raw[0].metadata[model.MD_ROTATION_COR] = (rotation + dr)
+        
+        # scale (pixel size)
+        scalecor = s.raw[0].metadata.get(model.MD_PIXEL_SIZE_COR, (1, 1))
+        s.raw[0].metadata[model.MD_PIXEL_SIZE_COR] = (scalecor[0] + dpx, scalecor[1] + dpx)
+        # TODO: split scale into x , y components
+
+        # TODO: shear?
+    
+        # update the image in the views
+        views = self.tab_data_model.views.value
+        updateImageInViews(s, views)
+        
+        # fit to content
+        self.panel.vp_secom_tl.canvas.fit_view_to_content()
+        self.panel.vp_secom_tr.canvas.fit_view_to_content()
 
     
-    def _move_sem_image(self, feature, dr=0, dpx=0):
-        self.feature = feature # TODO: set this when image is loaded...
+    def _move_stream_to_pos(self, pos: tuple):
+        # the difference between the clicked position, and the position in metadata
+        # is the offset (be careful because correlation is sign flipped)
 
-        for s in self.tab_data_model.overviewStreams.value:
-            if isinstance(s, StaticSEMStream):
-            
-                    logging.info(f"SEM FEATURE: {self.feature}")
-                    s.raw[0].metadata[model.MD_POS] = (self.feature.pos.value[0], self.feature.pos.value[1])
+        x, y = self.sem_stream.raw[0].metadata[model.MD_POS]
+        logging.info(f"SEM POSITION: {x}, {y}")
+        
+        cx, cy = self.sem_stream.raw[0].metadata[model.MD_POS_COR]
+        logging.info(f"CORRELATION POSITION: {cx}, {cy}")
 
-                    # r = s.raw[0].metadata[model.MD_ROTATION] + dr
-                    s.raw[0].metadata[model.MD_ROTATION] += dr
-                    if dpx != 0.0:
-                        px, py = s.raw[0].metadata[model.MD_PIXEL_SIZE]
-                        dpx = 1.0 + dpx       
-                        s.raw[0].metadata[model.MD_PIXEL_SIZE] = (px*dpx, py*dpx)
-                    
-                    def updateImageInViews(s: StaticStream, views: list):
-                        """force update the static stream in the selected views
-                        param: s (StaticStream) the static stream to update
-                        param: views (list[View]) the list of views to update"""
-                        v: guimod.View 
-                        for v in views:
-                            for sp in v.stream_tree.getProjections():  # stream or projection
-                                if isinstance(sp, acqstream.DataProjection):
-                                    st = sp.stream
-                                else:
-                                    st = sp
-                                if st is s:
-                                    sp._shouldUpdateImage()
+        nx = -(pos[0] - x)
+        ny = -(pos[1] - y)      
 
-                    # update the image in the views
-                    views = self.tab_data_model.views.value
-                    updateImageInViews(s, views)
+        logging.info(f"NEW POSITION: {nx}, {ny}")
+        
+        dx = cx - nx
+        dy = cy - ny
+        
+        logging.info(f"OFFSET: {dx}, {dy}")
+        self._move_sem_image(dx=dx, dy=dy, dr=0, dpx=0)
+
+        # self.sem_stream.raw[0].metadata[model.MD_POS_COR] = (nx, ny)    
+        # updateImageInViews(self.sem_stream, self.tab_data_model.views.value)
+
 
     def _on_features_changes(self, features):
         from odemis.acq.feature import get_features_dict
@@ -2193,6 +2226,7 @@ class CorrelationTab(Tab):
             
             logging.info(f"p: {p}, r: {r}")
             if isinstance(s, StaticSEMStream):
+                self.sem_stream = s
                 pos = {"x": p[0], "y": p[1], "rz": r}
                 pm = self.tab_data_model.main.posture_manager
                 trans_pos = pm._transformFromSEMToMeteor(pos)
@@ -2207,8 +2241,9 @@ class CorrelationTab(Tab):
 
                 logging.info(f"tilt adjustment: {t}, {b0}, {dy}")
 
-                # s.raw[0].metadata[model.MD_POS_COR] = md[model.MD_POS_COR]
-                s.raw[0].metadata[model.MD_POS] = (trans_pos["x"], trans_pos["y"]- dy)
+                cor_x = trans_pos["x"] - pos["x"]
+                cor_y = trans_pos["y"] - pos["y"] - dy
+                self.sem_stream.raw[0].metadata[model.MD_POS_COR] = (-cor_x, -cor_y)
                 # s.raw[0].metadata[model.MD_ROTATION] = trans_pos["rz"]
 
 
