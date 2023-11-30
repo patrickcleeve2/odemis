@@ -2210,6 +2210,33 @@ class CorrelationTab(Tab):
 
         return True
     
+    def _transformFromSEMToMeteor(self, s: StaticStream, pos: tuple):
+
+        # TODO: make this more generic, and not just for SEM / METEOR
+        #     
+        pm = self.tab_data_model.main.posture_manager
+        trans_pos = pm._transformFromSEMToMeteor(pos)
+        md = pm.stage.getMetadata()
+        logging.info(f"metadata: {md}")
+        logging.info(f"pos: {pos}, trans: {trans_pos}")
+
+        # tilt adjustment
+        t = md[model.MD_FAV_FM_POS_ACTIVE]["rx"]
+        b0 = 15e-3 # MAGIC_NUMBER
+        dy = b0 * numpy.sin(t)
+
+        logging.info(f"tilt adjustment: {t}, {b0}, {dy}")
+
+        cor_x = trans_pos["x"] - pos["x"]
+        cor_y = trans_pos["y"] - pos["y"] - dy
+        # cor_r = trans_pos["rz"] - pos["rz"] #TODO: correct intial rotation of the image
+        
+        s.raw[0].metadata[model.MD_POS_COR] = (-cor_x, -cor_y)
+        s.raw[0].metadata[model.MD_ROTATION_COR] = 0
+        s.raw[0].metadata[model.MD_PIXEL_SIZE_COR] = (1, 1)
+        
+        return s
+
     @call_in_wx_main
     def load_overview_data(self, data):
         # Create streams from data
@@ -2223,29 +2250,11 @@ class CorrelationTab(Tab):
 
             p = s.raw[0].metadata.get(model.MD_POS, (0, 0))
             r = s.raw[0].metadata.get(model.MD_ROTATION, 0)
+            pos = {"x": p[0], "y": p[1], "rz": r}
             
-            logging.info(f"p: {p}, r: {r}")
             if isinstance(s, StaticSEMStream):
-                self.sem_stream = s
-                pos = {"x": p[0], "y": p[1], "rz": r}
-                pm = self.tab_data_model.main.posture_manager
-                trans_pos = pm._transformFromSEMToMeteor(pos)
-                md = pm.stage.getMetadata()
-                logging.info(f"metadata: {md}")
-                logging.info(f"pos: {pos}, trans: {trans_pos}")
 
-                # tilt adjustment
-                t = md[model.MD_FAV_FM_POS_ACTIVE]["rx"]
-                b0 = 15e-3 # MAGIC_NUMBER
-                dy = b0 * numpy.sin(t)
-
-                logging.info(f"tilt adjustment: {t}, {b0}, {dy}")
-
-                cor_x = trans_pos["x"] - pos["x"]
-                cor_y = trans_pos["y"] - pos["y"] - dy
-                self.sem_stream.raw[0].metadata[model.MD_POS_COR] = (-cor_x, -cor_y)
-                # s.raw[0].metadata[model.MD_ROTATION] = trans_pos["rz"]
-
+                self.sem_stream = self._transformFromSEMToMeteor(s, pos)
 
             self.tab_data_model.overviewStreams.value.append(s)
             self.tab_data_model.streams.value.insert(0, s)
