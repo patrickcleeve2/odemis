@@ -1902,18 +1902,22 @@ class CorrelationTab(Tab):
         _shift_mod = evt.ShiftDown()
         _ctrl_mod = evt.ControlDown()
 
-        dx = 10e-6
-        dy = 10e-6
-        dr = numpy.deg2rad(1)
+        dx = 1e-6
+        dy = 1e-6
+        dr = numpy.deg2rad(0.5)
         dpx = 0.01
 
-        if _key == wx.WXK_DELETE:
-            logging.info("DELETE CURRENT FEATURE")
+        # if _key == wx.WXK_DELETE:
+        #     logging.info("DELETE CURRENT FEATURE")
 
-            self._delete_current_feature()
+        #     self._delete_current_feature()
 
-        if _key == wx.WXK_SPACE:
-            logging.info("SPACE")
+        # if _key == wx.WXK_SPACE:
+        #     logging.info("SPACE")
+
+
+
+
 
         # arrow keys
         if _key == wx.WXK_LEFT:
