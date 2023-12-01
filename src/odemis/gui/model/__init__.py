@@ -894,6 +894,9 @@ class CryoCorrelationGUIData(CryoGUIData):
         # the static overview map streams, among all streams in .streams
         self.overviewStreams = model.ListVA()
 
+        # for export tool
+        self.acq_fileinfo = VigilantAttribute(None) # a FileInfo
+
 
 
 

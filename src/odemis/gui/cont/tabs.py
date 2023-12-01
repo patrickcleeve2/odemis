@@ -1772,9 +1772,14 @@ class CorrelationTab(Tab):
 
         # First we create the views, then the streams
         vpv = self._create_views(main_data, panel.pnl_secom_grid.viewports)
+        
 
         # Order matters!
         self.view_controller = viewcont.ViewPortController(tab_data, panel, vpv)
+        
+        # export controller
+        # TODO: fix: menu -> export as not working, hooked up to analysis tab... confusing for user
+        self.export_controller = exportcont.ExportController(tab_data, main_frame, panel, vpv)
 
         # Connect the view selection buttons
         buttons = collections.OrderedDict([
@@ -1823,8 +1828,7 @@ class CorrelationTab(Tab):
         self._streambar_controller.add_action("From tileset...", self._on_add_tileset)
 
 
-        # TODO: export images
-        # self.export_controller = exportcont.ExportController(tab_data, main_frame, panel, vpv)
+
 
         self.sem_stream = None
         self.sem_features = model.ListVA()

@@ -1016,6 +1016,7 @@ class xrcpnl_tab_correlation(wx.Panel):
         self.scr_win_right = xrc.XRCCTRL(self, "scr_win_right")
         self.fp_secom_streams = xrc.XRCCTRL(self, "fp_secom_streams")
         self.pnl_secom_streams = xrc.XRCCTRL(self, "pnl_secom_streams")
+        self.btn_secom_export = xrc.XRCCTRL(self, "btn_secom_export")
 
 
 
@@ -10498,6 +10499,31 @@ def __init_resources():
               <option>1</option>
               <flag>wxEXPAND</flag>
               <minsize>400,400</minsize>
+            </object>
+            <object class="sizeritem">
+              <object class="wxPanel">
+                <object class="wxBoxSizer">
+                  <orient>wxVERTICAL</orient>
+                  <object class="sizeritem">
+                    <object class="ImageTextButton" name="btn_secom_export">
+                      <size>382,-1</size>
+                      <icon>img_icon_ico_export_png</icon>
+                      <height>48</height>
+                      <face_colour>blue</face_colour>
+                      <label>EXPORT IMAGE</label>
+                      <fg>#FFFFFF</fg>
+                      <style>wxALIGN_CENTRE</style>
+                      <XRCED>
+                        <assign_var>1</assign_var>
+                      </XRCED>
+                    </object>
+                    <flag>wxALL</flag>
+                    <border>10</border>
+                  </object>
+                </object>
+                <bg>#4D4D4D</bg>
+              </object>
+              <flag>wxEXPAND</flag>
             </object>
             <orient>wxVERTICAL</orient>
           </object>
