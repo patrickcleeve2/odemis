@@ -1829,7 +1829,11 @@ class CorrelationTab(Tab):
         self._streambar_controller.add_action("From file...", self._on_add_file)
         self._streambar_controller.add_action("From tileset...", self._on_add_tileset)
 
+
+        # probably should be VA
         self.sem_stream = None
+        self.flm_stream = None
+        self.selected_stream = None
         self.sem_features = model.ListVA()
         self.flm_features = model.ListVA()
 
@@ -1878,7 +1882,7 @@ class CorrelationTab(Tab):
         if evt.ShiftDown():
             
             # only move if the sem stream is loaded
-            if self.sem_stream is None:
+            if self.selected_stream is None:
                 return
                         
             # get the position of the mouse
@@ -1932,6 +1936,20 @@ class CorrelationTab(Tab):
         # show?
         self.tab_data_model.main.features.value.append(f)
 
+    def _swap_selected_stream(self):
+
+        if self.selected_stream is None:
+            if self.sem_stream is not None:
+                self.selected_stream = self.sem_stream
+            return
+
+        if self.selected_stream == self.sem_stream:
+            self.selected_stream = self.flm_stream
+        elif self.selected_stream == self.flm_stream:
+            
+            self.selected_stream = self.sem_stream
+        logging.info(f"SWAPPED STREAM: {self.selected_stream}")
+
     def _on_char(self, evt):
 
         _key = evt.GetKeyCode()
@@ -1939,12 +1957,17 @@ class CorrelationTab(Tab):
         _ctrl_mod = evt.ControlDown()
         _canvas = evt.GetEventObject()
 
+
+        if _key == wx.WXK_SPACE:
+            # swap selected stream
+            self._swap_selected_stream()
+
         # TODO: clean this up better
         logging.info(f"Key: {evt.GetKeyCode()}, Shift: {evt.ShiftDown()}, Ctrl: {evt.ControlDown()}")
         if _POINT_CORRELATION:
             if _key == wx.WXK_SPACE:
                 # test dialog
-                # if self.sem_stream is None:       
+                # if self.selected_stream is None:       
                 #     box = wx.MessageDialog(self.main_frame,
                 #             "No stream is present, so it's not possible to modify the alignment.",
                 #             "No stream", wx.OK | wx.ICON_STOP)
@@ -2019,16 +2042,21 @@ class CorrelationTab(Tab):
     
     def _move_sem_image(self, dx, dy, dr=0, dpx=0):
         
-        if self.sem_stream is None:
+        if self.selected_stream is None:
             return
         
         logging.info(f"move feature: {dx}, {dy}, {dr}, {dpx}")
     
-        s = self.sem_stream
+        s = self.selected_stream
 
         # translation
-        x, y = s.raw[0].metadata[model.MD_POS_COR]
-        s.raw[0].metadata[model.MD_POS_COR] = (x - dx, y - dy) # correlation direction is reversed
+        p = s.raw[0].metadata[model.MD_POS_COR]
+        if len(p) == 2:
+            x, y = p
+            s.raw[0].metadata[model.MD_POS_COR] = (x - dx, y - dy) # correlation direction is reversed
+        else:
+            x, y, z = p
+            s.raw[0].metadata[model.MD_POS_COR] = (x - dx, y - dy, z)
 
         # rotation
         rotation = s.raw[0].metadata.get(model.MD_ROTATION_COR, 0)
@@ -2054,10 +2082,16 @@ class CorrelationTab(Tab):
         # the difference between the clicked position, and the position in metadata
         # is the offset (be careful because correlation is sign flipped)
 
-        x, y = self.sem_stream.raw[0].metadata[model.MD_POS]
+        s = self.selected_stream
+
+        p = s.raw[0].metadata[model.MD_POS]
+        if len(p) == 2:
+            x, y = p
+        else:
+            x, y, z = p
         logging.info(f"SEM POSITION: {x}, {y}")
         
-        cx, cy = self.sem_stream.raw[0].metadata[model.MD_POS_COR]
+        cx, cy = s.raw[0].metadata[model.MD_POS_COR]
         logging.info(f"CORRELATION POSITION: {cx}, {cy}")
 
         nx = -(pos[0] - x)
@@ -2073,8 +2107,8 @@ class CorrelationTab(Tab):
 
         # TODO: make which image moves togglable
         
-        # self.sem_stream.raw[0].metadata[model.MD_POS_COR] = (nx, ny)    
-        # updateImageInViews(self.sem_stream, self.tab_data_model.views.value)
+        # self.selected_stream.raw[0].metadata[model.MD_POS_COR] = (nx, ny)    
+        # updateImageInViews(self.selected_stream, self.tab_data_model.views.value)
 
 
     def _on_features_changes(self, features):
@@ -2282,6 +2316,12 @@ class CorrelationTab(Tab):
             # only the latest stream is used            
             if isinstance(s, StaticSEMStream):
                 self.sem_stream = self._transformFromSEMToMeteor(s)
+
+            if isinstance(s, StaticFluoStream):
+                s.raw[0].metadata[model.MD_POS_COR] = (0, 0)
+                s.raw[0].metadata[model.MD_ROTATION_COR] = 0
+                s.raw[0].metadata[model.MD_PIXEL_SIZE_COR] = (1, 1)
+                self.flm_stream = s
 
             self.tab_data_model.overviewStreams.value.append(s)
             self.tab_data_model.streams.value.insert(0, s)
