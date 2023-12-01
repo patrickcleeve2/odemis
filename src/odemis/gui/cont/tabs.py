@@ -2285,8 +2285,9 @@ class CorrelationTab(Tab):
 
             self.tab_data_model.overviewStreams.value.append(s)
             self.tab_data_model.streams.value.insert(0, s)
-            self._streambar_controller.addStream(s, add_to_view=True, play=False)
-            
+            sc = self._streambar_controller.addStream(s, add_to_view=True, play=False)
+            sc.stream_panel.show_remove_btn(True)
+
             # Compute the total bounding box
             try:
                 s_bbox = s.getBoundingBox()
