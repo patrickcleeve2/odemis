@@ -1752,6 +1752,8 @@ def updateImageInViews(s: StaticStream, views: list):
             if st is s:
                 sp._shouldUpdateImage()
 
+
+_POINT_CORRELATION: bool = False
 class CorrelationTab(Tab):
 
     def __init__(self, name, button, panel, main_frame, main_data):
@@ -1807,7 +1809,7 @@ class CorrelationTab(Tab):
             for vp in (panel.vp_secom_tl, panel.vp_secom_tr, panel.vp_secom_bl, panel.vp_secom_br):
                 vp.show_sample_overlay(main_data.sample_centers, main_data.sample_radius)
 
-        # Default view is the Overview
+        # Default view is the SEM Overview
         tab_data.focussedView.value = panel.vp_secom_tl.view
         tab_data.focussedView.subscribe(self._on_view, init=True)
 
@@ -1827,15 +1829,13 @@ class CorrelationTab(Tab):
         self._streambar_controller.add_action("From file...", self._on_add_file)
         self._streambar_controller.add_action("From tileset...", self._on_add_tileset)
 
-
-
-
         self.sem_stream = None
         self.sem_features = model.ListVA()
         self.flm_features = model.ListVA()
 
-        self.sem_features.subscribe(self._on_features_changes, init=True)
-        self.flm_features.subscribe(self._on_features_changes, init=True)
+        if _POINT_CORRELATION:
+            self.sem_features.subscribe(self._on_features_changes, init=True)
+            self.flm_features.subscribe(self._on_features_changes, init=True)
 
         # bind keyboard for each panel
         panel.vp_secom_tl.canvas.Bind(wx.EVT_CHAR, self._on_char)
@@ -1892,6 +1892,9 @@ class CorrelationTab(Tab):
             self._move_stream_to_pos(p_pos)
         elif evt.ControlDown():
 
+            if not _POINT_CORRELATION:
+                return
+            
             # add a feature to canvas
             pos = evt.GetPosition()
 
@@ -1916,7 +1919,7 @@ class CorrelationTab(Tab):
         
         _num = len(self.sem_features.value) if feature_type == "SEM" else len(self.flm_features.value)
 
-        f = CryoFeature(name=f"{feature_type} Feature {_num}", 
+        f = CryoFeature(name=f"{feature_type} Feature {_num + 1}", 
                             x=pos[0], y=pos[1], z=0)
         if feature_type == "SEM":
             self.sem_features.value.append(f)
@@ -1938,33 +1941,33 @@ class CorrelationTab(Tab):
 
         # TODO: clean this up better
         logging.info(f"Key: {evt.GetKeyCode()}, Shift: {evt.ShiftDown()}, Ctrl: {evt.ControlDown()}")
+        if _POINT_CORRELATION:
+            if _key == wx.WXK_SPACE:
+                # test dialog
+                # if self.sem_stream is None:       
+                #     box = wx.MessageDialog(self.main_frame,
+                #             "No stream is present, so it's not possible to modify the alignment.",
+                #             "No stream", wx.OK | wx.ICON_STOP)
+                #     box.ShowModal()
+                #     box.Destroy()
+                #     return
+                from odemis.acq.feature import get_features_dict
+                logging.info(f"SEM Features: {get_features_dict(self.sem_features.value)}")
+                logging.info(f"FLM Features: {get_features_dict(self.flm_features.value)}")
 
-        if _key == wx.WXK_SPACE:
-            # test dialog
-            # if self.sem_stream is None:       
-            #     box = wx.MessageDialog(self.main_frame,
-            #             "No stream is present, so it's not possible to modify the alignment.",
-            #             "No stream", wx.OK | wx.ICON_STOP)
-            #     box.ShowModal()
-            #     box.Destroy()
-            #     return
-            from odemis.acq.feature import get_features_dict
-            logging.info(f"SEM Features: {get_features_dict(self.sem_features.value)}")
-            logging.info(f"FLM Features: {get_features_dict(self.flm_features.value)}")
 
-
-        if _key == wx.WXK_DELETE:
-            # delete all features from canvas
-            if _canvas == self.panel.vp_secom_tl.canvas:
-                feature_type = "SEM"
-            elif _canvas == self.panel.vp_secom_tr.canvas:
-                feature_type = "FLM"
-            else:
-                return
-            self._delete_features(feature_type)
+            if _key == wx.WXK_DELETE:
+                # delete all features from canvas
+                if _canvas == self.panel.vp_secom_tl.canvas:
+                    feature_type = "SEM"
+                elif _canvas == self.panel.vp_secom_tr.canvas:
+                    feature_type = "FLM"
+                else:
+                    return
+                self._delete_features(feature_type)
 
         # arrow keys
-
+        # TODO: make these adjustable in settings
         dx = 1e-6
         dy = 1e-6
         dr = numpy.deg2rad(0.5)
@@ -2092,10 +2095,7 @@ class CorrelationTab(Tab):
             if len(self.sem_features.value) == len(self.flm_features.value):
                 logging.info(f"DO TRANSFORMATION")
 
-                # TODO: implement
-
-
-
+                # TODO: implemen
             else:
                 logging.info(f"NOT EQUAL LENGTH")
         else:
@@ -2240,10 +2240,14 @@ class CorrelationTab(Tab):
 
         return True
     
-    def _transformFromSEMToMeteor(self, s: StaticStream, pos: tuple):
+    def _transformFromSEMToMeteor(self, s: StaticStream):
 
         # TODO: make this more generic, and not just for SEM / METEOR
-        #     
+
+        p = s.raw[0].metadata.get(model.MD_POS, (0, 0))
+        r = s.raw[0].metadata.get(model.MD_ROTATION, 0) # NB: this is scan rotation, not stage rotation
+        pos = {"x": p[0], "y": p[1], "rz": r}
+
         pm = self.tab_data_model.main.posture_manager
         trans_pos = pm._transformFromSEMToMeteor(pos)
         md = pm.stage.getMetadata()
@@ -2274,17 +2278,10 @@ class CorrelationTab(Tab):
         bbox = (None, None, None, None)  # ltrb in m
         for s in streams:
             s.name.value = "Overview " + s.name.value
-            # Add the static stream to the streams list of the model and also to the overviewStreams to easily
-            # distinguish between it and other acquired streams
 
-
-            p = s.raw[0].metadata.get(model.MD_POS, (0, 0))
-            r = s.raw[0].metadata.get(model.MD_ROTATION, 0)
-            pos = {"x": p[0], "y": p[1], "rz": r}
-            
+            # only the latest stream is used            
             if isinstance(s, StaticSEMStream):
-
-                self.sem_stream = self._transformFromSEMToMeteor(s, pos)
+                self.sem_stream = self._transformFromSEMToMeteor(s)
 
             self.tab_data_model.overviewStreams.value.append(s)
             self.tab_data_model.streams.value.insert(0, s)
