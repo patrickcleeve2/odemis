@@ -1909,7 +1909,6 @@ class StreamBarController(object):
 
     def _onView(self, view):
         """ Handle the changing of the focused view """
-
         if not view or self.ignore_view:
             return
 
@@ -2534,6 +2533,52 @@ class SecomStreamsController(StreamBarController):
                 self._tab_data_model.emState.value = guimodel.STATE_OFF
 
 
+class CryoStreamsController(StreamBarController):
+    """
+    Controls the display of stream panels without affecting the actual streams
+    """
+
+    def _onView(self, view):
+        """ Handle the changing of the focused view """
+        if not view or self.ignore_view:
+            return
+
+        # hide/show the stream panels which are compatible with the view
+        allowed_classes = view.stream_classes
+        ov_streams = self._tab_data_model.overviewStreams.value
+        static = issubclass(allowed_classes, StaticStream)
+        for e in self._stream_bar.stream_panels:
+            # Three primary options for views are outlined here:
+            # 1. Live Stream: Focused on real-time viewership, generating 'Live Views'.
+            # 2. Acquired (Static) Stream Related to a Feature: Resulting in 'Acquired' views.
+            # 3. Static Overviews: Leading to 'Overview' views.
+            if static:
+                # Distinguishing Views for StaticStream:
+                # To differentiate between the two views linked to StaticStream,
+                # reliance solely on 'stream_classes' isn't feasible.
+                # Therefore, differentiation is achieved based on:
+                #   - Class Type:'FeatureOverviewView' is the only class type for the 'Overview' view.
+                #   - Association with 'overviewStreams': This stream's presence within the
+                #     'overviewStreams' signifies its classification.
+                # Thus, combining the class type and 'overviewStreams' presence ensures
+                # the accurate identification of the 'Overview' view.
+                if isinstance(view, guimodel.FeatureOverviewView):
+                    e.Show(e.stream in ov_streams)
+                else:
+                    e.Show(e.stream not in ov_streams)
+            else:
+                e.Show(isinstance(e.stream, allowed_classes))
+
+        self._stream_bar.fit_streams()
+
+        # update the "visible" icon of each stream panel to match the list
+        # of streams in the view
+        if self._prev_view is not None:
+            self._prev_view.stream_tree.flat.unsubscribe(self._on_visible_streams)
+        view.stream_tree.flat.subscribe(self._on_visible_streams, init=True)
+        self._prev_view = view
+
+
 class SparcStreamsController(StreamBarController):
     """
     Controls the streams for the SPARC acquisition tab
@@ -2658,13 +2703,6 @@ class SparcStreamsController(StreamBarController):
                 return spec
 
         raise LookupError("No spectrometer corresponding to %s found" % (detector.name,))
-
-    def addEBIC(self, **kwargs):
-        # Need to use add_to_view=True to force only showing on the right
-        # view (and not onself.cnvs.update_drawing() the current view)
-        # TODO: should it be handled the same way as CLIntensity? (ie, respects
-        # the ROA)
-        return super(SparcStreamsController, self).addEBIC(add_to_view=True, **kwargs)
 
     def _add_sem_stream(self, name, detector, **kwargs):
 
@@ -2805,6 +2843,39 @@ class SparcStreamsController(StreamBarController):
                                                 [sem_stream, ar_stream])
 
         return self._addRepStream(ar_stream, sem_ar_stream)
+
+
+    def addEBIC(self, **kwargs):
+
+        main_data = self._main_data_model
+
+        ebic_stream = acqstream.EBICSettingsStream(
+            "EBIC",
+            main_data.ebic,
+            main_data.ebic.data,
+            main_data.ebeam,
+            sstage=main_data.scan_stage,
+            focuser=self._main_data_model.ebeam_focus,
+            emtvas={"dwellTime"},
+            detvas=get_local_vas(main_data.ebic, self._main_data_model.hw_settings_config),
+        )
+
+        # Create the equivalent MDStream
+        sem_stream = self._tab_data_model.semStream
+        sem_ebic_stream = acqstream.SEMMDStream("SEM EBIC",
+                                               [sem_stream, ebic_stream])
+
+        ret = self._addRepStream(ebic_stream, sem_ebic_stream,
+                                  play=False
+                                  )
+
+        # With EBIC, often the user wants to get the whole area, same as the survey.
+        # But it's not very easy to select all of it, so do it automatically.
+        # (after the controller creation, to automatically set the ROA too)
+        if ebic_stream.roi.value == acqstream.UNDEFINED_ROI:
+            ebic_stream.roi.value = (0, 0, 1, 1)
+        return ret
+
 
     def addCLIntensity(self):
         """ Create a CLi stream and add to to all compatible viewports """
@@ -3238,7 +3309,7 @@ class FastEMStreamsController(StreamBarController):
                 canvas.view.addStream(s)
 
 
-class CryoAcquiredStreamsController(StreamBarController):
+class CryoAcquiredStreamsController(CryoStreamsController):
     """
     StreamBarController to control the display of the Static streams in the Cryo
     Localization tab. It deals with two types of streams:
