@@ -1016,6 +1016,10 @@ class xrcpnl_tab_correlation(wx.Panel):
         self.scr_win_right = xrc.XRCCTRL(self, "scr_win_right")
         self.fp_secom_streams = xrc.XRCCTRL(self, "fp_secom_streams")
         self.pnl_secom_streams = xrc.XRCCTRL(self, "pnl_secom_streams")
+        self.fp_meteor_correlation = xrc.XRCCTRL(self, "fp_meteor_correlation")
+        self.pnl_meteor_correlation = xrc.XRCCTRL(self, "pnl_meteor_correlation")
+        self.cmb_correlation_stream = xrc.XRCCTRL(self, "cmb_correlation_stream")
+        self.dx_step_cntrl = xrc.XRCCTRL(self, "dx_step_cntrl")
         self.btn_secom_export = xrc.XRCCTRL(self, "btn_secom_export")
 
 
@@ -10480,6 +10484,63 @@ def __init_resources():
                         <label>STREAMS</label>
                         <fg>#1A1A1A</fg>
                         <bg>#555555</bg>
+                      </object>
+                      <object class="FoldPanelItem" name="fp_meteor_correlation">
+                          <object class="wxPanel" name="pnl_meteor_correlation">
+                            <object class="wxBoxSizer">
+                              <orient>wxVERTICAL</orient>
+                              <object class="sizeritem">
+                                <object class="wxStaticText">
+                                  <label>Move Stream</label>
+                                  <fg>#E5E5E5</fg>
+                                </object>
+                                  <flag>wxALIGN_CENTRE_VERTICAL</flag>
+                                  <border>5</border>
+                              </object>
+                              <object class="sizeritem"> 
+                                <object class="OwnerDrawnComboBox" name="cmb_correlation_stream">
+                                    <size>-1,-1</size>
+                                    <fg>#2FA7D4</fg>
+                                    <bg>#333333</bg>
+                                    <style>wxBORDER_NONE|wxCB_DROPDOWN|wxCB_READONLY|wxTE_PROCESS_ENTER</style>
+                                  </object>
+                                  <flag>wxALIGN_LEFT</flag>
+                              </object>
+                              <object class="sizeritem">
+                                <object class="wxStaticText">
+                                  <label>dx stepsize</label>
+                                  <fg>#E5E5E5</fg>
+                                </object>
+                                  <flag>wxALIGN_CENTRE_VERTICAL</flag>
+                                  <border>5</border>
+                              </object>
+                              <object class="sizeritem">
+                                <object class="UnitFloatCtrl" name="dx_step_cntrl">
+                                  <value>1</value>
+                                  <key_step>0.000001</key_step>
+                                  <min>0</min>
+                                  <max>1</max>
+                                  <unit>um</unit>
+                                  <accuracy>3</accuracy>
+                                  <XRCED>
+                                    <assign_var>1</assign_var>
+                                  </XRCED>
+                                  <font>
+                                    <size>9</size>
+                                  </font>
+                                </object>
+                              </object>
+                              <XRCED>
+                                <assign_var>1</assign_var>
+                              </XRCED>
+                            </object>
+                          </object>
+                        <label>CORRELATION CONTROLS</label>
+                        <fg>#1A1A1A</fg>
+                        <bg>#555555</bg>
+                        <XRCED>
+                          <assign_var>1</assign_var>
+                        </XRCED>
                       </object>
                       <spacing>0</spacing>
                       <leftspacing>0</leftspacing>

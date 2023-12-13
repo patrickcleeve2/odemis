@@ -1846,10 +1846,13 @@ class CorrelationTab(Tab):
         self._streambar_controller.add_action("From file...", self._on_add_file)
         self._streambar_controller.add_action("From tileset...", self._on_add_tileset)
 
+        # panel = tab
+        self._panel = panel
 
         # probably should be VA
         self.sem_stream = None
         self.flm_stream = None
+        self.correlation_streams = model.ListVA()
         self.selected_stream = None
         self.sem_features = model.ListVA()
         self.flm_features = model.ListVA()
@@ -1869,6 +1872,8 @@ class CorrelationTab(Tab):
         panel.vp_secom_tr.canvas.Bind(wx.EVT_LEFT_DOWN, self._on_mouse_down)
         panel.vp_secom_bl.canvas.Bind(wx.EVT_LEFT_DOWN, self._on_mouse_down)
         panel.vp_secom_br.canvas.Bind(wx.EVT_LEFT_DOWN, self._on_mouse_down)
+
+        panel.cmb_correlation_stream.Bind(wx.EVT_COMBOBOX, self._on_selected_stream_change)
 
         # self._feature_panel_controller = CryoFeatureController(tab_data, panel, self)
         self.conf = conf.get_acqui_conf()
@@ -1953,19 +1958,12 @@ class CorrelationTab(Tab):
         # show?
         self.tab_data_model.main.features.value.append(f)
 
-    def _swap_selected_stream(self):
+    def _on_selected_stream_change(self, evt):
 
-        if self.selected_stream is None:
-            if self.sem_stream is not None:
-                self.selected_stream = self.sem_stream
-            return
+        idx = self._panel.cmb_correlation_stream.GetSelection()
 
-        if self.selected_stream == self.sem_stream:
-            self.selected_stream = self.flm_stream
-        elif self.selected_stream == self.flm_stream:
-            
-            self.selected_stream = self.sem_stream
-        logging.info(f"SWAPPED STREAM: {self.selected_stream}")
+        self.selected_stream = self.correlation_streams.value[idx]
+        logging.info(f"Selected Stream Changed to {idx}: {self.selected_stream.name.value}")
 
     def _on_char(self, evt):
 
@@ -2008,7 +2006,8 @@ class CorrelationTab(Tab):
 
         # arrow keys
         # TODO: make these adjustable in settings
-        dx = 1e-6
+        dx = self._panel.dx_step_cntrl.GetValue()
+        logging.info(f"dx: {dx}")
         dy = 1e-6
         dr = numpy.deg2rad(0.5)
         dpx = 0.01
@@ -2300,7 +2299,8 @@ class CorrelationTab(Tab):
         pos = {"x": p[0], "y": p[1], "rz": r}
 
         pm = self.tab_data_model.main.posture_manager
-        trans_pos = pm._transformFromSEMToMeteor(pos)
+        # trans_pos = pm._transformFromSEMToMeteor(pos)
+        trans_pos = pos
         md = pm.stage.getMetadata()
         logging.info(f"metadata: {md}")
         logging.info(f"pos: {pos}, trans: {trans_pos}")
@@ -2332,16 +2332,17 @@ class CorrelationTab(Tab):
 
             # only the latest stream is used            
             if isinstance(s, StaticSEMStream):
-                self.sem_stream = self._transformFromSEMToMeteor(s)
+                s = self._transformFromSEMToMeteor(s)
 
             if isinstance(s, StaticFluoStream):
                 s.raw[0].metadata[model.MD_POS_COR] = (0, 0)
                 s.raw[0].metadata[model.MD_ROTATION_COR] = 0
                 s.raw[0].metadata[model.MD_PIXEL_SIZE_COR] = (1, 1)
-                self.flm_stream = s
+                
 
             self.tab_data_model.overviewStreams.value.append(s)
             self.tab_data_model.streams.value.insert(0, s)
+            self.correlation_streams.value.append(s)
             sc = self._streambar_controller.addStream(s, add_to_view=True, play=False)
             sc.stream_panel.show_remove_btn(True)
 
@@ -2356,7 +2357,12 @@ class CorrelationTab(Tab):
                 bbox = (min(bbox[0], s_bbox[0]), min(bbox[1], s_bbox[1]),
                         max(bbox[2], s_bbox[2]), max(bbox[3], s_bbox[3]))
 
-
+            # add stream to combobox
+            n = len(self._panel.cmb_correlation_stream.Items)
+            self._panel.cmb_correlation_stream.Insert(s.name.value, n, s)
+        
+        self._panel.cmb_correlation_stream.SetSelection(0) 
+        
         # Recenter to the new content only
         if bbox[0] is not None: 
             if isinstance(s, StaticSEMStream):

@@ -30,6 +30,8 @@ class CryoFeatureController(object):
         self._panel = panel
         self._tab = tab
 
+        logging.error(f"PANEL IS : {self._panel}")
+
         # features va attributes (name, status..etc) connectors
         self._feature_name_va_connector = None
         self._feature_status_va_connector = None
