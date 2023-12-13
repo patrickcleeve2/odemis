@@ -702,11 +702,6 @@ class LocalizationTab(Tab):
                 # Remove from chamber tab too
                 chamber_tab = self.main_data.getTabByName("cryosecom_chamber")
                 chamber_tab.remove_overview_streams([st])
-            else:
-                # Remove the stream from all the features
-                for feature in self.tab_data_model.main.features.value:
-                    if st in feature.streams.value:
-                        feature.streams.value.remove(st)
 
     @call_in_wx_main
     def display_acquired_data(self, data):
@@ -724,6 +719,9 @@ class LocalizationTab(Tab):
                 self.tab_data_model.main.currentFeature.value.streams.value.append(s)
             self.tab_data_model.streams.value.insert(0, s)  # TODO: let addFeatureStream do that
             self._acquired_stream_controller.showFeatureStream(s)
+        # refit the latest acquired feature so that the new data is fully visible in the
+        # acquired view even when the user had moved around/zoomed in
+        self.panel.vp_secom_tr.canvas.fit_view_to_content()
 
     def _on_acquisition(self, is_acquiring):
         # When acquiring, the tab is automatically disabled and should be left as-is
@@ -3937,8 +3935,24 @@ class CryoChamberTab(Tab):
                 else:
                     pos_str.append(f"{axis} = " + readable_str(end_pos[axis], "m", 4))
         pos_str = "\n". join(pos_str)
+
+        # Check the deviation in rotation angle when switching from SEM to FM,
+        # give a warning message if switching is done from a different rotation angle
+        target_label = self.tab_data_model.main.posture_manager.getCurrentPostureLabel(end_pos)
+        warn_msg = "The stage will move to this position:\n%s\n\nIs it safe?"
+        if target_label == FM_IMAGING:
+            stage_md = self._stage.getMetadata()
+            fav_angles = stage_md[model.MD_FAV_SEM_POS_ACTIVE]
+            axis_name = "rz" if "rz" in fav_angles else "rm"
+            current_angle = self._stage.position.value[axis_name]
+            fav_angle = fav_angles[axis_name]
+
+            if not math.isclose(current_angle, fav_angle):
+                warn_msg = ("The current rotation value is different from the desired value. The switching behavior"
+                            " may not be proper.\n\n") + warn_msg
+
         box = wx.MessageDialog(self.main_frame,
-                               "The stage will move to this position:\n" + pos_str + "\n\nIs this safe?",
+                               warn_msg % (pos_str,),
                                caption="Large move of the stage",
                                style=wx.YES_NO | wx.ICON_QUESTION | wx.CENTER)
         ans = box.ShowModal()  # Waits for the window to be closed
