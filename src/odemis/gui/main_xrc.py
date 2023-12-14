@@ -1020,6 +1020,9 @@ class xrcpnl_tab_correlation(wx.Panel):
         self.pnl_meteor_correlation = xrc.XRCCTRL(self, "pnl_meteor_correlation")
         self.cmb_correlation_stream = xrc.XRCCTRL(self, "cmb_correlation_stream")
         self.dx_step_cntrl = xrc.XRCCTRL(self, "dx_step_cntrl")
+        self.dy_step_cntrl = xrc.XRCCTRL(self, "dy_step_cntrl")
+        self.dr_step_cntrl = xrc.XRCCTRL(self, "dr_step_cntrl")
+        self.dpx_step_cntrl = xrc.XRCCTRL(self, "dpx_step_cntrl")
         self.btn_secom_export = xrc.XRCCTRL(self, "btn_secom_export")
 
 
@@ -10508,7 +10511,7 @@ def __init_resources():
                               </object>
                               <object class="sizeritem">
                                 <object class="wxStaticText">
-                                  <label>dx stepsize</label>
+                                  <label>X Step Size</label>
                                   <fg>#E5E5E5</fg>
                                 </object>
                                   <flag>wxALIGN_CENTRE_VERTICAL</flag>
@@ -10519,8 +10522,80 @@ def __init_resources():
                                   <value>1</value>
                                   <key_step>0.000001</key_step>
                                   <min>0</min>
-                                  <max>1</max>
+                                  <max>10</max>
                                   <unit>um</unit>
+                                  <accuracy>3</accuracy>
+                                  <XRCED>
+                                    <assign_var>1</assign_var>
+                                  </XRCED>
+                                  <font>
+                                    <size>9</size>
+                                  </font>
+                                </object>
+                              </object>
+                              <object class="sizeritem">
+                                <object class="wxStaticText">
+                                  <label>Y Step Size</label>
+                                  <fg>#E5E5E5</fg>
+                                </object>
+                                  <flag>wxALIGN_CENTRE_VERTICAL</flag>
+                                  <border>5</border>
+                              </object>
+                              <object class="sizeritem">
+                                <object class="UnitFloatCtrl" name="dy_step_cntrl">
+                                  <value>1</value>
+                                  <key_step>0.000001</key_step>
+                                  <min>0</min>
+                                  <max>10</max>
+                                  <unit>um</unit>
+                                  <accuracy>3</accuracy>
+                                  <XRCED>
+                                    <assign_var>1</assign_var>
+                                  </XRCED>
+                                  <font>
+                                    <size>9</size>
+                                  </font>
+                                </object>
+                              </object>
+                              <object class="sizeritem">
+                                <object class="wxStaticText">
+                                  <label>Rotation Step Size</label>
+                                  <fg>#E5E5E5</fg>
+                                </object>
+                                  <flag>wxALIGN_CENTRE_VERTICAL</flag>
+                                  <border>5</border>
+                              </object>
+                              <object class="sizeritem">
+                                <object class="UnitFloatCtrl" name="dr_step_cntrl">
+                                  <value>1</value>
+                                  <key_step>0.000001</key_step>
+                                  <min>0</min>
+                                  <max>180</max>
+                                  <unit>deg</unit>
+                                  <accuracy>3</accuracy>
+                                  <XRCED>
+                                    <assign_var>1</assign_var>
+                                  </XRCED>
+                                  <font>
+                                    <size>9</size>
+                                  </font>
+                                </object>
+                              </object>
+                                <object class="sizeritem">
+                                <object class="wxStaticText">
+                                  <label>Scale Step Size</label>
+                                  <fg>#E5E5E5</fg>
+                                </object>
+                                  <flag>wxALIGN_CENTRE_VERTICAL</flag>
+                                  <border>5</border>
+                              </object>
+                              <object class="sizeritem">
+                                <object class="UnitFloatCtrl" name="dpx_step_cntrl">
+                                  <value>1</value>
+                                  <key_step>0.000001</key_step>
+                                  <min>0</min>
+                                  <max>10</max>
+                                  <unit>%</unit>
                                   <accuracy>3</accuracy>
                                   <XRCED>
                                     <assign_var>1</assign_var>

@@ -2006,11 +2006,11 @@ class CorrelationTab(Tab):
 
         # arrow keys
         # TODO: make these adjustable in settings
-        dx = self._panel.dx_step_cntrl.GetValue()
-        logging.info(f"dx: {dx}")
-        dy = 1e-6
-        dr = numpy.deg2rad(0.5)
-        dpx = 0.01
+        dx = self._panel.dx_step_cntrl.GetValue() * 1e-6
+        dy = self._panel.dy_step_cntrl.GetValue() * 1e-6
+        dr = numpy.deg2rad(self._panel.dr_step_cntrl.GetValue()) 
+        dpx = self._panel.dpx_step_cntrl.GetValue() / 100
+        logging.info(f"dx: {dx}, dy: {dy}, dr: {dr}, dpx: {dpx}")
 
         if _key == wx.WXK_LEFT:
             if _shift_mod:
