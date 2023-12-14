@@ -9373,6 +9373,7 @@
                                     <fg>#2FA7D4</fg>
                                     <bg>#333333</bg>
                                     <style>wxBORDER_NONE|wxCB_DROPDOWN|wxCB_READONLY|wxTE_PROCESS_ENTER</style>
+                                    <tooltip>Select a stream to move. Shift + Left Click to Move the Stream, Use the arrow keys to move, Shift + Arrow Keys to control Rotation and Scale.</tooltip>
                                   </object>
                                   <flag>wxALIGN_LEFT</flag>
                               </object>

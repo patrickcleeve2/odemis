@@ -1850,8 +1850,6 @@ class CorrelationTab(Tab):
         self._panel = panel
 
         # probably should be VA
-        self.sem_stream = None
-        self.flm_stream = None
         self.correlation_streams = model.ListVA()
         self.selected_stream = None
         self.sem_features = model.ListVA()
@@ -1874,6 +1872,8 @@ class CorrelationTab(Tab):
         panel.vp_secom_br.canvas.Bind(wx.EVT_LEFT_DOWN, self._on_mouse_down)
 
         panel.cmb_correlation_stream.Bind(wx.EVT_COMBOBOX, self._on_selected_stream_change)
+
+        # TODO: add toggle for enablling moving the streams. If not enabled, the streams dont move, use standard controls for mouse / keyboard events...
 
         # self._feature_panel_controller = CryoFeatureController(tab_data, panel, self)
         self.conf = conf.get_acqui_conf()
@@ -1972,11 +1972,6 @@ class CorrelationTab(Tab):
         _ctrl_mod = evt.ControlDown()
         _canvas = evt.GetEventObject()
 
-
-        if _key == wx.WXK_SPACE:
-            # swap selected stream
-            self._swap_selected_stream()
-
         # TODO: clean this up better
         logging.info(f"Key: {evt.GetKeyCode()}, Shift: {evt.ShiftDown()}, Ctrl: {evt.ControlDown()}")
         if _POINT_CORRELATION:
@@ -2014,24 +2009,24 @@ class CorrelationTab(Tab):
 
         if _key == wx.WXK_LEFT:
             if _shift_mod:
-                self._move_sem_image(0, 0, -dr, )
+                self._move_stream(0, 0, -dr, 0)
             else:
-                self._move_sem_image(-dx, 0, 0, 0)
+                self._move_stream(-dx, 0, 0, 0)
         if _key == wx.WXK_RIGHT:
             if _shift_mod:
-                self._move_sem_image(0, 0, dr, 0)
+                self._move_stream(0, 0, dr, 0)
             else:
-                self._move_sem_image(dx, 0, 0, 0)
+                self._move_stream(dx, 0, 0, 0)
         if _key == wx.WXK_UP:
             if _shift_mod:
-                self._move_sem_image(0, 0, 0, dpx)
+                self._move_stream(0, 0, 0, dpx)
             else:
-                self._move_sem_image(0, dy, 0, 0)
+                self._move_stream(0, dy, 0, 0)
         if _key == wx.WXK_DOWN:
             if _shift_mod:
-                self._move_sem_image(0, 0, 0, -dpx)
+                self._move_stream(0, 0, 0, -dpx)
             else:
-                self._move_sem_image(0, -dy, 0, 0)
+                self._move_stream(0, -dy, 0, 0)
 
     def _delete_features(self, feature_type: str):
 
@@ -2056,7 +2051,7 @@ class CorrelationTab(Tab):
         if current_feature in self.flm_features.value:
             self.flm_features.value.remove(current_feature)
     
-    def _move_sem_image(self, dx, dy, dr=0, dpx=0):
+    def _move_stream(self, dx, dy, dr=0, dpx=0):
         
         if self.selected_stream is None:
             return
@@ -2119,13 +2114,7 @@ class CorrelationTab(Tab):
         dy = cy - ny
         
         logging.info(f"OFFSET: {dx}, {dy}")
-        self._move_sem_image(dx=dx, dy=dy, dr=0, dpx=0)
-
-        # TODO: make which image moves togglable
-        
-        # self.selected_stream.raw[0].metadata[model.MD_POS_COR] = (nx, ny)    
-        # updateImageInViews(self.selected_stream, self.tab_data_model.views.value)
-
+        self._move_stream(dx=dx, dy=dy, dr=0, dpx=0)
 
     def _on_features_changes(self, features):
         from odemis.acq.feature import get_features_dict
@@ -2293,6 +2282,7 @@ class CorrelationTab(Tab):
     def _transformFromSEMToMeteor(self, s: StaticStream):
 
         # TODO: make this more generic, and not just for SEM / METEOR
+        # TODO: remove this, as it doesnt work based on current metadata. 
 
         p = s.raw[0].metadata.get(model.MD_POS, (0, 0))
         r = s.raw[0].metadata.get(model.MD_ROTATION, 0) # NB: this is scan rotation, not stage rotation
