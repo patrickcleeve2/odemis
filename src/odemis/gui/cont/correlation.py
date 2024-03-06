@@ -94,6 +94,17 @@ class CorrelationController(object):
         # enable correlation controls
         self._panel.ctrl_enable_correlation.SetValue(True) # enable by default
 
+        # point correlation
+        self.sem_features = model.ListVA()
+        self.flm_features = model.ListVA()
+
+        self.sem_features.subscribe(self._on_features_changes, init=True)
+        self.flm_features.subscribe(self._on_features_changes, init=True)
+
+        # self.points_overlay = None
+        # self.add_world_overlay(self.points_overlay)
+        # self.points_overlay.active.value = True
+
         # bind mouse and keyboard events for correlation controls
         for vp in self._viewports:
             vp.canvas.Bind(wx.EVT_CHAR, self.on_char)
@@ -229,7 +240,23 @@ class CorrelationController(object):
 
             # move selected stream to position
             self._move_stream_to_pos(p_pos)
+        
+        elif evt.ControlDown():
 
+            # add a feature to canvas
+            pos = evt.GetPosition()
+
+            p_pos = active_canvas.view_to_phys(pos, active_canvas.get_half_buffer_size())
+
+            logging.info(f"FEATURE POSITION: {p_pos}")
+            
+            # add a feature to the canvas
+            if active_canvas == self._panel.vp_correlation_tl.canvas:
+                self._add_feature(p_pos, "FLM")
+            elif active_canvas == self._panel.vp_correlation_tr.canvas:
+                self._add_feature(p_pos, "SEM")
+            else:
+                logging.info("No feature added, wrong canvas")
         else:
             logging.debug("invalid correlation event, passing event to canvas")
             active_canvas.on_left_down(evt)       # super event passthrough
@@ -274,6 +301,33 @@ class CorrelationController(object):
             self._move_stream(0, dy, 0, dpx)
         elif key == wx.WXK_DOWN:
             self._move_stream(0, -dy, 0, -dpx)
+
+
+        
+        if key == wx.WXK_SPACE:
+            # test dialog
+            # if self.sem_stream is None:       
+            #     box = wx.MessageDialog(self.main_frame,
+            #             "No stream is present, so it's not possible to modify the alignment.",
+            #             "No stream", wx.OK | wx.ICON_STOP)
+            #     box.ShowModal()
+            #     box.Destroy()
+            #     return
+            from odemis.acq.feature import get_features_dict
+            logging.info(f"SEM Features: {get_features_dict(self.sem_features.value)}")
+            logging.info(f"FLM Features: {get_features_dict(self.flm_features.value)}")
+
+
+        if key == wx.WXK_DELETE:
+            active_canvas = evt.GetEventObject()
+            # delete all features from canvas
+            if active_canvas == self._panel.vp_correlation_tl.canvas:
+                feature_type = "SEM"
+            elif active_canvas == self._panel.vp_correlation_tr.canvas:
+                feature_type = "FLM"
+            else:
+                return
+            self._delete_features(feature_type)
 
     def _move_stream(self, dx: float, dy: float , dr: float = 0, dpx: float = 0) -> None:
         """move the selected stream by the specified amount. the stream is forced
@@ -368,3 +422,75 @@ class CorrelationController(object):
 
         # move the stream using the correlation position offset
         self._move_stream(dx=dx, dy=dy, dr=0, dpx=0)
+
+
+    def _add_feature(self, pos: tuple, feature_type: str):
+        
+        from odemis.acq.feature import CryoFeature
+        
+        _num = len(self.sem_features.value) if feature_type == "SEM" else len(self.flm_features.value)
+
+        f = CryoFeature(name=f"{feature_type} Feature {_num}", 
+                            x=pos[0], y=pos[1], z=0)
+        if feature_type == "SEM":
+            self.sem_features.value.append(f)
+        elif feature_type == "FLM":
+            self.flm_features.value.append(f)
+        else:
+            logging.info("No feature added, wrong feature type")
+            return
+        
+        self._tab_data_model.main.features.value.append(f)
+
+    def _delete_features(self, feature_type: str):
+
+        # remove all features from canvas
+        if feature_type == "SEM":
+            while len(self.sem_features.value) > 0:
+                self.sem_features.value.pop()
+        elif feature_type == "FLM":
+            while len(self.flm_features.value) > 0:
+                self.flm_features.value.pop()
+        else:
+            logging.info("No feature deleted, wrong feature type")
+        
+        self._tab_data_model.main.features.value = []
+    
+    def _on_features_changes(self, features):
+        from odemis.acq.feature import get_features_dict
+
+        # check if features is empty
+        if not features:
+            return
+        
+        logging.info(f"SEM Features: {get_features_dict(self.sem_features.value)}")
+        logging.info(f"FLM Features: {get_features_dict(self.flm_features.value)}")
+
+        logging.info(f"SEM FEATURES: {len(self.sem_features.value)}")
+        logging.info(f"FLM FEATURES: {len(self.flm_features.value)}")
+
+        if len(self.sem_features.value) >= 3 and len(self.flm_features.value) >= 3:
+        # and equal length
+            if len(self.sem_features.value) == len(self.flm_features.value):
+                logging.info(f"DO TRANSFORMATION")
+
+                # TODO: implement
+
+            else:
+                logging.info(f"NOT EQUAL LENGTH")
+        else:
+            logging.info(f"NOT ENOUGH FEATURES")
+
+        # calculate the difference between sem and flm features
+        # if len(self.sem_features.value) > 0 and len(self.flm_features.value) > 0:
+        #     sem_feature = self.sem_features.value[-1]
+        #     flm_feature = self.flm_features.value[-1]
+
+        #     # calculate the difference between sem and flm features
+        #     dx = sem_feature.pos.value[0] - flm_feature.pos.value[0]
+        #     dy = sem_feature.pos.value[1] - flm_feature.pos.value[1]
+        #     dz = sem_feature.pos.value[2] - flm_feature.pos.value[2]
+
+        #     logging.info(f"----------------DIFFERENCE----------------------")
+        #     logging.info(f"dx: {dx}, dy: {dy}, dz: {dz}")
+        #     logging.info(f"------------------------------------------------")
