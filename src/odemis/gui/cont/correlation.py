@@ -270,7 +270,7 @@ class CorrelationController(object):
         shift_mod = evt.ShiftDown()
 
         # pass through event, if not a valid correlation key or enabled
-        valid_keys = [wx.WXK_LEFT, wx.WXK_RIGHT, wx.WXK_UP, wx.WXK_DOWN]
+        valid_keys = [wx.WXK_LEFT, wx.WXK_RIGHT, wx.WXK_UP, wx.WXK_DOWN, wx.WXK_SPACE, wx.WXK_DELETE]
         if key not in valid_keys or not self.correlation_enabled():
             evt.Skip()
             return
@@ -471,28 +471,170 @@ class CorrelationController(object):
         logging.info(f"SEM FEATURES: {len(self.sem_features.value)}")
         logging.info(f"FLM FEATURES: {len(self.flm_features.value)}")
 
-        if len(self.sem_features.value) >= 3 and len(self.flm_features.value) >= 3:
+        MIN_REQ_FEATURES = 3
+        if len(self.sem_features.value) >= MIN_REQ_FEATURES and len(self.flm_features.value) >= MIN_REQ_FEATURES:
         # and equal length
             if len(self.sem_features.value) == len(self.flm_features.value):
-                logging.info(f"DO TRANSFORMATION")
+                logging.info(f"FEATURES EQUAL LENGTH: DO TRANSFORMATION")
 
                 # TODO: implement
 
+                # calculate the order of points
+
+                # calculate scale factor
+
+                sem_points = [f.pos.value for f in self.sem_features.value]
+                flm_points = [f.pos.value for f in self.flm_features.value]
+                scale = calculate_scale_factor(sem_points, flm_points)
+
+                logging.info(f"SCALE FACTOR: {scale}")
+
+                # calculate transformation matrix
+                src = np.array(sem_points)
+                dst = np.array(flm_points)
+
+                R, t, s = estimate_transform(src, dst)
+
+                logging.info(f"ROTATION: {R}")
+                logging.info(f"TRANSLATION: {t}")
+                logging.info(f"SCALE: {s}")
+
+                # apply transformation to the selected stream
+
+                dx, dy, dr, dpx = t[0], t[1], R, s
+                
+                s = self._tab_data_model.selected_stream.value
+
+                # logging.debug(f"move stream {s.name.value}: {dx}, {dy}, {dr}, {dpx}")
+
+                # position of src stream
+
+                # caclulate inverse transform
+                # R_inv = R.inv()
+                # t_inv = -R_inv * t
+
+                # logging.info(f"INVERSE ROTATION: {R_inv}")
+                # logging.info(f"INVERSE TRANSLATION: {t_inv}")
+
+
+
+                # get the position of the sem stream
+                for stream in self._tab_data_model.streams.value:
+                    if isinstance(stream, StaticSEMStream):
+                        sem_stream = stream
+                        break
+
+                pos = sem_stream.raw[0].metadata[model.MD_POS]
+
+                logging.info(f"SEM STREAM POSITION: {pos}")
+
+                dx = dx - pos[0]
+                dy = dy - pos[1]
+                
+
+
+
+                # translation
+                p = s.raw[0].metadata[model.MD_POS_COR]
+                if len(p) == 2:
+                    x, y = p
+                    s.raw[0].metadata[model.MD_POS_COR] = (dx, dy) # correlation direction is reversed
+                else:
+                    x, y, z = p
+                    s.raw[0].metadata[model.MD_POS_COR] = (dx, dy, z)
+
+                # rotation
+                # rotation = s.raw[0].metadata.get(model.MD_ROTATION_COR, 0)
+                # s.raw[0].metadata[model.MD_ROTATION_COR] = (rotation + dr)
+
+                # # scale (pixel size)
+                # scalecor = s.raw[0].metadata.get(model.MD_PIXEL_SIZE_COR, (1, 1))
+                # s.raw[0].metadata[model.MD_PIXEL_SIZE_COR] = (scalecor[0] + dpx, scalecor[1] + dpx)
+
+                # TODO: split x, y scale, add shear?
+
+                # update the image in the views
+                update_image_in_views(s, self._tab_data_model.views.value)
+
+                # fit the source viewports to the content, as the image may have moved
+                self._panel.vp_correlation_tl.canvas.fit_view_to_content()
+                self._panel.vp_correlation_tr.canvas.fit_view_to_content()
+                self._panel.vp_correlation_bl.canvas.fit_view_to_content()
+                self._panel.vp_correlation_br.canvas.fit_view_to_content()
+                    
             else:
                 logging.info(f"NOT EQUAL LENGTH")
         else:
             logging.info(f"NOT ENOUGH FEATURES")
+            
+import numpy as np
 
-        # calculate the difference between sem and flm features
-        # if len(self.sem_features.value) > 0 and len(self.flm_features.value) > 0:
-        #     sem_feature = self.sem_features.value[-1]
-        #     flm_feature = self.flm_features.value[-1]
+def calculate_scale_factor(src: list[float], dst: list[float]) -> float:
+    """
+    Calculate the scale factor between two sets of coordinates.
 
-        #     # calculate the difference between sem and flm features
-        #     dx = sem_feature.pos.value[0] - flm_feature.pos.value[0]
-        #     dy = sem_feature.pos.value[1] - flm_feature.pos.value[1]
-        #     dz = sem_feature.pos.value[2] - flm_feature.pos.value[2]
+    Parameters
+    ----------
+    src : (M, 2) array
+        Source coordinates.
+    dst : (M, 2) array
+        Destination coordinates.
 
-        #     logging.info(f"----------------DIFFERENCE----------------------")
-        #     logging.info(f"dx: {dx}, dy: {dy}, dz: {dz}")
-        #     logging.info(f"------------------------------------------------")
+    Returns
+    -------
+    scale : float
+        Scale factor.
+    """
+    src_distances = np.sqrt(np.sum(np.diff(src, axis=0)**2, axis=1))
+    dst_distances = np.sqrt(np.sum(np.diff(dst, axis=0)**2, axis=1))
+
+    scale = np.mean(dst_distances) / np.mean(src_distances)
+
+    return scale
+
+
+import numpy as np
+from scipy.spatial.transform import Rotation as R
+
+def estimate_transform(src, dst):
+    """
+    Estimate the transformation parameters given two sets of 3D points.
+
+    Parameters
+    ----------
+    src : (M, 3) array
+        Source coordinates.
+    dst : (M, 3) array
+        Destination coordinates.
+
+    Returns
+    -------
+    R : (3, 3) array
+        Estimated rotation matrix.
+    t : (3,) array
+        Estimated translation vector.
+    s : float
+        Estimated scale factor.
+    """
+    src_mean = src.mean(axis=0)
+    dst_mean = dst.mean(axis=0)
+
+    src_demean = src - src_mean
+    dst_demean = dst - dst_mean
+
+    A = np.dot(dst_demean.T, src_demean) / src_demean.size
+
+    U, S, V = np.linalg.svd(A)
+
+    R = np.dot(U, V)
+
+    if np.linalg.det(R) < 0:
+       # Reflection detected
+       V[-1,:] *= -1
+       R = np.dot(U, V)
+
+    s = np.sum(S) / np.sum(src_demean ** 2)
+
+    t = dst_mean - s * np.dot(src_mean, R.T)
+
+    return R, t, s
