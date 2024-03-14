@@ -336,6 +336,11 @@ class xrcpnl_tab_correlation(wx.Panel):
         self.dr_step_cntrl = xrc.XRCCTRL(self, "dr_step_cntrl")
         self.dpx_step_cntrl = xrc.XRCCTRL(self, "dpx_step_cntrl")
         self.btn_reset_correlation = xrc.XRCCTRL(self, "btn_reset_correlation")
+        self.fp_meteor_point_correlation = xrc.XRCCTRL(self, "fp_meteor_point_correlation")
+        self.pnl_meteor_point_correlation = xrc.XRCCTRL(self, "pnl_meteor_point_correlation")
+        self.cmb_point_correlation_reference = xrc.XRCCTRL(self, "cmb_point_correlation_reference")
+        self.cmb_point_correlation_moving = xrc.XRCCTRL(self, "cmb_point_correlation_moving")
+        self.label_point_correlation_info = xrc.XRCCTRL(self, "label_point_correlation_info")
         self.btn_export = xrc.XRCCTRL(self, "btn_export")
 
 
@@ -3577,6 +3582,83 @@ u\xb5\x17\x8a\x0c\xe7\xc1\xb6w\x88\x1c\x954\xf4\xc1\xd1\x0f\x96\xdeN>1M\
                           </object>
                         </object>
                         <label>CORRELATION CONTROLS</label>
+                        <fg>#1A1A1A</fg>
+                        <bg>#555555</bg>
+                        <XRCED>
+                          <assign_var>1</assign_var>
+                        </XRCED>
+                      </object>
+                      <object class="FoldPanelItem" name="fp_meteor_point_correlation">
+                        <object class="wxPanel" name="pnl_meteor_point_correlation">
+                          <object class="wxBoxSizer">
+                            <orient>wxVERTICAL</orient>
+                            <object class="sizeritem">
+                              <object class="wxStaticText">
+                                <label>Hello World</label>
+                                <fg>#E5E5E5</fg>
+                                <XRCED>
+                                  <assign_var>1</assign_var>
+                                </XRCED>
+                              </object>
+                            </object>
+                             <object class="sizeritem">
+                              <object class="wxFlexGridSizer">
+                                <object class="sizeritem">
+                                  <object class="wxStaticText">
+                                    <label>Reference Frame</label>
+                                    <fg>#E5E5E5</fg>
+                                  </object>
+                                  <flag>wxALIGN_CENTRE_VERTICAL</flag>
+                                  <border>5</border>
+                                  <flag>wxEXPAND</flag>
+                                </object>
+                                <object class="sizeritem">
+                                  <object class="OwnerDrawnComboBox" name="cmb_point_correlation_reference">
+                                      <size>250,-1</size>
+                                      <fg>#2FA7D4</fg>
+                                      <bg>#333333</bg>
+                                      <style>wxBORDER_NONE|wxCB_DROPDOWN|wxCB_READONLY|wxTE_PROCESS_ENTER</style>
+                                      <tooltip>The reference frame defines the base images that others will be correlated to. This allows selecting positions from the correlated images. Images in the reference frame cannot be moved.</tooltip>
+                                    </object>
+                                </object>
+                                <object class="sizeritem">
+                                  <object class="wxStaticText">
+                                    <label>Moving Stream</label>
+                                    <fg>#E5E5E5</fg>
+                                  </object>
+                                  <flag>wxALIGN_CENTRE_VERTICAL</flag>
+                                  <border>5</border>
+                                  <flag>wxEXPAND</flag>
+                                </object>
+                                <object class="sizeritem">
+                                  <object class="OwnerDrawnComboBox" name="cmb_point_correlation_moving">
+                                    <size>250,-1</size>
+                                    <fg>#2FA7D4</fg>
+                                    <bg>#333333</bg>
+                                    <style>wxBORDER_NONE|wxCB_DROPDOWN|wxCB_READONLY|wxTE_PROCESS_ENTER</style>
+                                    <tooltip>The moving stream frame defines the image that will move.</tooltip>
+                                  </object>
+                                </object>
+                                <cols>2</cols>
+                                <rows>4</rows>
+                                <vgap>10</vgap>
+                                <hgap>10</hgap>
+                                <growablecols>1</growablecols>
+                              </object>
+                            </object>
+                            <object class="sizeritem">
+                              <object class="wxStaticText" name="label_point_correlation_info">
+                                <label>The Information label for point correlation method.</label>
+                                <fg>#E5E5E5</fg>
+                                <XRCED>
+                                  <assign_var>1</assign_var>
+                                </XRCED>
+                              </object>
+                              <flag>wxALIGN_CENTRE_VERTICAL</flag>
+                              </object>
+                          </object>
+                        </object>
+                        <label>POINT CORRELATION CONTROLS</label>
                         <fg>#1A1A1A</fg>
                         <bg>#555555</bg>
                         <XRCED>

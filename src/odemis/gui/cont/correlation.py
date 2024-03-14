@@ -72,6 +72,7 @@ class CorrelationController(object):
         self._tab_data_model.streams.subscribe(self._on_correlation_streams_change, init=True)
         self._tab_data_model.streams.subscribe(self._update_correlation_cmb, init=True)
         self._tab_data_model.streams.subscribe(self.add_to_localization_tab, init=False)
+        self._tab_data_model.streams.subscribe(self._update_point_correlation_cmb, init=True)
 
         # connect the correlation streams to the tab data
         self._panel.cmb_correlation_stream.Bind(wx.EVT_COMBOBOX, self._on_selected_stream_change)
@@ -127,6 +128,23 @@ class CorrelationController(object):
         # select the first stream, if available
         if self._panel.cmb_correlation_stream.GetCount() > 0:
             self._panel.cmb_correlation_stream.SetSelection(0)
+
+    @call_in_wx_main
+    def _update_point_correlation_cmb(self, streams: list) -> None:
+        """update the point correlation comboboxes with the available streams
+        :param streams (list[StaticStream]) the streams to add to the combo box"""
+
+        self._panel.cmb_point_correlation_reference.Clear()
+        self._panel.cmb_point_correlation_moving.Clear()
+        for s in streams:
+            self._panel.cmb_point_correlation_reference.Append(s.name.value, s)
+            self._panel.cmb_point_correlation_moving.Append(s.name.value, s)
+        
+        if self._panel.cmb_point_correlation_reference.GetCount() > 0:
+            self._panel.cmb_point_correlation_reference.SetSelection(0)
+
+        if self._panel.cmb_point_correlation_reference.GetCount() > 0:
+            self._panel.cmb_point_correlation_reference.SetSelection(0)    
 
     @call_in_wx_main
     def _on_correlation_streams_change(self, streams: list) -> None:
