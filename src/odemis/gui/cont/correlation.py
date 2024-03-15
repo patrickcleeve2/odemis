@@ -520,9 +520,10 @@ class CorrelationController(object):
 
                 logging.info(f"SCALE FACTOR: {scale}")
 
+                # assume always flm -> sem
                 # calculate transformation matrix
-                src = np.array(sem_points)
-                dst = np.array(flm_points)
+                src = np.array(flm_points)
+                dst = np.array(sem_points)
 
                 R, t, s = estimate_transform(src, dst)
 
@@ -532,10 +533,25 @@ class CorrelationController(object):
 
                 # apply transformation to the selected stream
 
+                # Create a 3x3 identity matrix
+                mat = np.eye(3)
+
+                # Set the top-left 2x2 sub-matrix to the rotation matrix R
+                mat[:2, :2] = R[:2, :2]
+
+                # Multiply the matrix by the scale s
+                # mat *= s
+
+                # Set the top-right 2x1 sub-matrix to the translation vector t
+                mat[:2, 2] = t[:2]
+
+                from odemis.util.conversion import get_img_transformation_md
+
+
+
                 dx, dy, dr, dpx = t[0], t[1], R, s
                 
-                s = self._tab_data_model.selected_stream.value
-
+                
                 # logging.debug(f"move stream {s.name.value}: {dx}, {dy}, {dr}, {dpx}")
 
                 # position of src stream
@@ -547,6 +563,14 @@ class CorrelationController(object):
                 # logging.info(f"INVERSE ROTATION: {R_inv}")
                 # logging.info(f"INVERSE TRANSLATION: {t_inv}")
 
+                flm_stream = None
+                sem_stream = None
+
+                # get the position of the flm stream
+                for stream in self._tab_data_model.streams.value:
+                    if isinstance(stream, StaticFluoStream):
+                        flm_stream = stream
+                        break
 
 
                 # get the position of the sem stream
@@ -554,25 +578,74 @@ class CorrelationController(object):
                     if isinstance(stream, StaticSEMStream):
                         sem_stream = stream
                         break
+                        
 
-                pos = sem_stream.raw[0].metadata[model.MD_POS]
+                if flm_stream is None or sem_stream is None:
+                    logging.info(f"NO STREAMS")
+                    return
 
-                logging.info(f"SEM STREAM POSITION: {pos}")
+                # assume for now other stream is SEM
+                #         
 
-                dx = dx - pos[0]
-                dy = dy - pos[1]
+                import copy
+
+                # copy initial flm pixel size
+                pixel_size  = copy.deepcopy(flm_stream.raw[0].metadata[model.MD_PIXEL_SIZE])
+                # logging.info(f"FLM PIXEL SIZE: {pixel_size}")
+                # logging.info(f'Pixel size FLM: {flm_stream.raw[0].metadata[model.MD_PIXEL_SIZE]}')
+                # logging.info(f'Pixel size SEM: {sem_stream.raw[0].metadata[model.MD_PIXEL_SIZE]}')
+
+                transf_md = get_img_transformation_md(mat, flm_stream.raw[0], sem_stream.raw[0])
+
+                logging.info(f'TRANSFORM META: {transf_md[model.MD_PIXEL_SIZE]}')
+                logging.info(f"TRANSFORMATION MD: {transf_md}")
+
+                # add a new flm stream, representing the transformation
+                flm_transformed = StaticFluoStream(name="flm-transformed", raw=flm_stream.raw[0])
+                flm_transformed.raw[0].metadata.update(transf_md)
+                # name = f"{flm_stream.name.value} - Transformed"
+                # flm_transformed.name.value = name
+                # logging.info(f'Pixel size FLM-TRANSFORM: {flm_stream.raw[0].metadata[model.MD_PIXEL_SIZE]}')
+                # logging.info(f'Pixel size FLM-TRANSFORM: {flm_transformed.raw[0].metadata[model.MD_PIXEL_SIZE]}')
+
+                # dont match pixel size
+                flm_transformed.raw[0].metadata[model.MD_PIXEL_SIZE] = pixel_size
+
+                # logging.info(f"FLM PIXEL SIZE: {pixel_size}")
+                # logging.info(f'Pixel size FLM-RAW: {flm_stream.raw[0].metadata[model.MD_PIXEL_SIZE]}')
+                # logging.info(f'Pixel size FLM-TRANSFORM: {flm_transformed.raw[0].metadata[model.MD_PIXEL_SIZE]}')
+
+                # set PIXEL_SIZE_COR to scale
+                # flm_transformed.raw[0].metadata[model.MD_PIXEL_SIZE_COR] = (1/s, 1/s)
+
+                # add the new stream to the tab
+                self.add_streams([flm_transformed])
+
+
+
+                # hide the original flm stream in all views
+                for v in self._tab_data_model.views.value:
+                    v.stream_tree.hideStream(flm_stream)
+                
+
+                # pos = sem_stream.raw[0].metadata[model.MD_POS]
+
+                # logging.info(f"SEM STREAM POSITION: {pos}")
+
+                # dx = dx - pos[0]
+                # dy = dy - pos[1]
                 
 
 
 
                 # translation
-                p = s.raw[0].metadata[model.MD_POS_COR]
-                if len(p) == 2:
-                    x, y = p
-                    s.raw[0].metadata[model.MD_POS_COR] = (dx, dy) # correlation direction is reversed
-                else:
-                    x, y, z = p
-                    s.raw[0].metadata[model.MD_POS_COR] = (dx, dy, z)
+                # p = s.raw[0].metadata[model.MD_POS_COR]
+                # if len(p) == 2:
+                #     x, y = p
+                #     s.raw[0].metadata[model.MD_POS_COR] = (dx, dy) # correlation direction is reversed
+                # else:
+                #     x, y, z = p
+                #     s.raw[0].metadata[model.MD_POS_COR] = (dx, dy, z)
 
                 # rotation
                 # rotation = s.raw[0].metadata.get(model.MD_ROTATION_COR, 0)
