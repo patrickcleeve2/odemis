@@ -146,8 +146,8 @@ class CorrelationController(object):
         if self._panel.cmb_point_correlation_reference.GetCount() > 0:
             self._panel.cmb_point_correlation_reference.SetSelection(0)
 
-        if self._panel.cmb_point_correlation_reference.GetCount() > 0:
-            self._panel.cmb_point_correlation_reference.SetSelection(0)    
+        if self._panel.cmb_point_correlation_moving.GetCount() > 0:
+            self._panel.cmb_point_correlation_moving.SetSelection(0)    
 
     @call_in_wx_main
     def _on_correlation_streams_change(self, streams: list) -> None:
@@ -525,43 +525,55 @@ class CorrelationController(object):
                 src = np.array(flm_points)
                 dst = np.array(sem_points)
 
-                R, t, s = estimate_transform(src, dst)
 
-                logging.info(f"ROTATION: {R}")
-                logging.info(f"TRANSLATION: {t}")
-                logging.info(f"SCALE: {s}")
 
-                # apply transformation to the selected stream
+                # MANUAL ESTIMATION
+                # R, t, s = estimate_transform(src, dst)
 
-                # Create a 3x3 identity matrix
-                mat = np.eye(3)
+                # logging.info(f"ROTATION: {R}")
+                # logging.info(f"TRANSLATION: {t}")
+                # logging.info(f"SCALE: {s}")
 
+                # mat = np.eye(3)
                 # Set the top-left 2x2 sub-matrix to the rotation matrix R
-                mat[:2, :2] = R[:2, :2]
+                # mat[:2, :2] = R[:2, :2]
 
                 # Multiply the matrix by the scale s
                 # mat *= s
 
                 # Set the top-right 2x1 sub-matrix to the translation vector t
-                mat[:2, 2] = t[:2]
+                # mat[:2, 2] = t[:2]
+
+                # ODEMIS TRANSFORM
+                from odemis.util.transform import AffineTransform
+
+                # convert src, dst to 2d points
+                src = [f[:2] for f in src]
+                dst = [f[:2] for f in dst]
+
+                affine1 = AffineTransform.from_pointset(src, dst)
+                affine2 = AffineTransform.from_pointset(dst, src)
+                
+                logging.info(f"-----------------------")
+                logging.info(f"MATRIX 1: {affine1.matrix}")
+                logging.info(f"TRANSLATION 1: {affine1.translation}")
+                logging.info(f"-----------------------")
+                logging.info(f"MATRIX 2: {affine2.matrix}")
+                logging.info(f"TRANSLATION 2: {affine2.translation}")
+                logging.info(f"-----------------------")
+                
+                # apply transformation to the selected stream
+
+                # Create a 3x3 identity matrix
+                mat = np.eye(3)
+                mat[:2, :2] = affine1.matrix
+                mat[:2, 2] = affine1.translation
+
+
+
 
                 from odemis.util.conversion import get_img_transformation_md
 
-
-
-                dx, dy, dr, dpx = t[0], t[1], R, s
-                
-                
-                # logging.debug(f"move stream {s.name.value}: {dx}, {dy}, {dr}, {dpx}")
-
-                # position of src stream
-
-                # caclulate inverse transform
-                # R_inv = R.inv()
-                # t_inv = -R_inv * t
-
-                # logging.info(f"INVERSE ROTATION: {R_inv}")
-                # logging.info(f"INVERSE TRANSLATION: {t_inv}")
 
                 flm_stream = None
                 sem_stream = None
@@ -578,7 +590,13 @@ class CorrelationController(object):
                     if isinstance(stream, StaticSEMStream):
                         sem_stream = stream
                         break
-                        
+                
+
+                # TODO: implement user selection of reference, moving stream
+                # idx = self._panel.cmb_point_correlation_reference.GetSelection()
+                # self._tab_data_model.selected_stream.value = self._panel.cmb_point_correlation_reference.GetClientData(idx)
+                # logging.debug(f"Selected Stream Changed to {idx}: {self._tab_data_model.selected_stream.value.name.value}")
+
 
                 if flm_stream is None or sem_stream is None:
                     logging.info(f"NO STREAMS")
@@ -591,11 +609,19 @@ class CorrelationController(object):
 
                 # copy initial flm pixel size
                 pixel_size  = copy.deepcopy(flm_stream.raw[0].metadata[model.MD_PIXEL_SIZE])
-                # logging.info(f"FLM PIXEL SIZE: {pixel_size}")
-                # logging.info(f'Pixel size FLM: {flm_stream.raw[0].metadata[model.MD_PIXEL_SIZE]}')
-                # logging.info(f'Pixel size SEM: {sem_stream.raw[0].metadata[model.MD_PIXEL_SIZE]}')
-
                 transf_md = get_img_transformation_md(mat, flm_stream.raw[0], sem_stream.raw[0])
+
+                # subtract half the width / height of the sem image
+                shape = flm_stream.raw[0].shape
+
+                pixel_size = transf_md[model.MD_PIXEL_SIZE]
+                pos = transf_md[model.MD_POS]
+
+                # subtract half the width / height of the sem image
+
+
+                transf_md[model.MD_POS] = (pos[0] + shape[1] / 2 * pixel_size[0], 
+                                           pos[1] - shape[0] / 2 * pixel_size[1])
 
                 logging.info(f'TRANSFORM META: {transf_md[model.MD_PIXEL_SIZE]}')
                 logging.info(f"TRANSFORMATION MD: {transf_md}")
@@ -603,62 +629,19 @@ class CorrelationController(object):
                 # add a new flm stream, representing the transformation
                 flm_transformed = StaticFluoStream(name="flm-transformed", raw=flm_stream.raw[0])
                 flm_transformed.raw[0].metadata.update(transf_md)
-                # name = f"{flm_stream.name.value} - Transformed"
-                # flm_transformed.name.value = name
-                # logging.info(f'Pixel size FLM-TRANSFORM: {flm_stream.raw[0].metadata[model.MD_PIXEL_SIZE]}')
-                # logging.info(f'Pixel size FLM-TRANSFORM: {flm_transformed.raw[0].metadata[model.MD_PIXEL_SIZE]}')
 
-                # dont match pixel size
+                # dont match pixel size (scale not working atm)
                 flm_transformed.raw[0].metadata[model.MD_PIXEL_SIZE] = pixel_size
-
-                # logging.info(f"FLM PIXEL SIZE: {pixel_size}")
-                # logging.info(f'Pixel size FLM-RAW: {flm_stream.raw[0].metadata[model.MD_PIXEL_SIZE]}')
-                # logging.info(f'Pixel size FLM-TRANSFORM: {flm_transformed.raw[0].metadata[model.MD_PIXEL_SIZE]}')
-
-                # set PIXEL_SIZE_COR to scale
-                # flm_transformed.raw[0].metadata[model.MD_PIXEL_SIZE_COR] = (1/s, 1/s)
 
                 # add the new stream to the tab
                 self.add_streams([flm_transformed])
 
-
-
                 # hide the original flm stream in all views
-                for v in self._tab_data_model.views.value:
-                    v.stream_tree.hideStream(flm_stream)
+                # for v in self._tab_data_model.views.value:
+                    # v.stream_tree.hideStream(flm_stream)
                 
-
-                # pos = sem_stream.raw[0].metadata[model.MD_POS]
-
-                # logging.info(f"SEM STREAM POSITION: {pos}")
-
-                # dx = dx - pos[0]
-                # dy = dy - pos[1]
-                
-
-
-
-                # translation
-                # p = s.raw[0].metadata[model.MD_POS_COR]
-                # if len(p) == 2:
-                #     x, y = p
-                #     s.raw[0].metadata[model.MD_POS_COR] = (dx, dy) # correlation direction is reversed
-                # else:
-                #     x, y, z = p
-                #     s.raw[0].metadata[model.MD_POS_COR] = (dx, dy, z)
-
-                # rotation
-                # rotation = s.raw[0].metadata.get(model.MD_ROTATION_COR, 0)
-                # s.raw[0].metadata[model.MD_ROTATION_COR] = (rotation + dr)
-
-                # # scale (pixel size)
-                # scalecor = s.raw[0].metadata.get(model.MD_PIXEL_SIZE_COR, (1, 1))
-                # s.raw[0].metadata[model.MD_PIXEL_SIZE_COR] = (scalecor[0] + dpx, scalecor[1] + dpx)
-
-                # TODO: split x, y scale, add shear?
-
                 # update the image in the views
-                update_image_in_views(s, self._tab_data_model.views.value)
+                update_image_in_views(flm_transformed, self._tab_data_model.views.value)
 
                 # fit the source viewports to the content, as the image may have moved
                 self._panel.vp_correlation_tl.canvas.fit_view_to_content()
