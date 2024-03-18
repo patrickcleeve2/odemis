@@ -579,9 +579,7 @@ class CorrelationController(object):
                 mat[:2, :2] = affine1.matrix
                 mat[:2, 2] = affine1.translation
 
-
-
-
+                # TODO: to matrix multiplication
                 from odemis.util.conversion import get_img_transformation_md
 
 
@@ -624,14 +622,17 @@ class CorrelationController(object):
                 # subtract half the width / height of the sem image
                 shape = flm_stream.raw[0].shape
 
-                pixel_size = transf_md[model.MD_PIXEL_SIZE]
+                # pixel_size = transf_md[model.MD_PIXEL_SIZE]
                 pos = transf_md[model.MD_POS]
 
                 # subtract half the width / height of the sem image
 
-
-                transf_md[model.MD_POS] = (pos[0] + shape[1] / 2 * pixel_size[0], 
-                                           pos[1] - shape[0] / 2 * pixel_size[1])
+                pos2 = (pos[0] + shape[1] / 2 * pixel_size[0], 
+                                        pos[1] - shape[0] / 2 * pixel_size[1])
+            
+                if len(pos) == 3:
+                    pos2 = (pos2[0], pos2[1], pos[2])
+                transf_md[model.MD_POS] = pos2
 
                 logging.info(f'TRANSFORM META: {transf_md[model.MD_PIXEL_SIZE]}')
                 logging.info(f"TRANSFORMATION MD: {transf_md}")
