@@ -512,7 +512,7 @@ class CorrelationController(object):
         logging.info(f"SEM FEATURES: {len(self.sem_features.value)}")
         logging.info(f"FLM FEATURES: {len(self.flm_features.value)}")
 
-        MIN_REQ_FEATURES = 3
+        MIN_REQ_FEATURES = 4
         if len(self.sem_features.value) >= MIN_REQ_FEATURES and len(self.flm_features.value) >= MIN_REQ_FEATURES:
         # and equal length
             if len(self.sem_features.value) == len(self.flm_features.value):
@@ -576,11 +576,11 @@ class CorrelationController(object):
 
                 # Create a 3x3 identity matrix
                 mat = np.eye(3)
-                mat[:2, :2] = affine1.matrix
-                mat[:2, 2] = affine1.translation
+                mat[:2, :2] = affine2.matrix
+                mat[:2, 2] = affine2.translation
 
                 # TODO: to matrix multiplication
-                from odemis.util.conversion import get_img_transformation_md
+                from odemis.util.conversion import get_img_transformation_md, get_img_transformation_matrix
 
 
                 flm_stream = None
@@ -613,46 +613,94 @@ class CorrelationController(object):
                 # assume for now other stream is SEM
                 #         
 
+                #REF https://github.com/jni/affinder/blob/main/src/affinder/affinder.py#L74
+
+
                 import copy
 
+                # ref_m = get_img_transformation_matrix(sem_stream.raw[0].metadata)
+                ref_trans = sem_stream.raw[0].metadata[model.MD_POS]
+
+                ref_mat = np.eye(3) # reference is identity. 
+                # ref_mat[:2, :2] = ref_m
+                # ref_mat[:2, 2] = ref_trans
+
+
+
+                logging.info(f"REF MAT: {ref_mat}")
+
+                # multiply the transformation matrix by the reference matrix
+                mat = ref_mat @ mat
+
+                logging.info(f"TRANSFORMATION MATRIX: {mat}")
+
+                # Translation is the last column
+                tx = mat[0, 2]
+                ty = mat[1, 2]
+                translation = np.array([tx, ty])
+
+                # Scale is the norm of the first two columns
+                sx = np.linalg.norm(mat[:2, 0])
+                sy = np.linalg.norm(mat[:2, 1])
+                scale2 = np.array([sx, sy])
+
+                # Compute rotation
+                rotation = np.arctan2(mat[1, 0]/sx, mat[0, 0]/sx)
+
+                print("Translation: ", translation)
+                print("Scale: ", scale2)
+                print("Rotation in radians: ", rotation)
+
+
+
+                # set MD_PIXEL_SIZE_COR to 1/scale2
+                flm_stream.raw[0].metadata[model.MD_PIXEL_SIZE_COR] = (1/scale2[0], 1/scale2[1])
+
+                # set MD_POS_COR to translation
+                sem_pos = sem_stream.raw[0].metadata[model.MD_POS]
+                flm_stream.raw[0].metadata[model.MD_POS_COR] = (tx, ty)
+
+                # set MD_ROTATION_COR to rotation
+                flm_stream.raw[0].metadata[model.MD_ROTATION_COR] = rotation
+
                 # copy initial flm pixel size
-                pixel_size  = copy.deepcopy(flm_stream.raw[0].metadata[model.MD_PIXEL_SIZE])
-                transf_md = get_img_transformation_md(mat, flm_stream.raw[0], sem_stream.raw[0])
+                # pixel_size  = copy.deepcopy(flm_stream.raw[0].metadata[model.MD_PIXEL_SIZE])
+                # new_pixel_size = (pixel_size[0] * 1/scale2[0], pixel_size[1] * 1/scale2[1])
+                # transf_md = copy.deepcopy(get_img_transformation_md(mat, flm_stream.raw[0], sem_stream.raw[0]))
 
-                # subtract half the width / height of the sem image
-                shape = flm_stream.raw[0].shape
+                # # subtract half the width / height of the sem image
+                # shape = flm_stream.raw[0].shape
 
-                # pixel_size = transf_md[model.MD_PIXEL_SIZE]
-                pos = transf_md[model.MD_POS]
+                # # pixel_size = transf_md[model.MD_PIXEL_SIZE]
+                # pos = transf_md[model.MD_POS]
 
-                # subtract half the width / height of the sem image
+                # # subtract half the width / height of the sem image
 
-                pos2 = (pos[0] + shape[1] / 2 * pixel_size[0], 
-                                        pos[1] - shape[0] / 2 * pixel_size[1])
+                # pos2 = (pos[0] + shape[1] / 2 * new_pixel_size[0], 
+                #                         pos[1] - shape[0] / 2 * new_pixel_size[1])
             
-                if len(pos) == 3:
-                    pos2 = (pos2[0], pos2[1], pos[2])
-                transf_md[model.MD_POS] = pos2
+                # if len(pos) == 3:
+                #     pos2 = (pos2[0], pos2[1], pos[2])
+                # transf_md[model.MD_POS] = pos2
 
-                logging.info(f'TRANSFORM META: {transf_md[model.MD_PIXEL_SIZE]}')
-                logging.info(f"TRANSFORMATION MD: {transf_md}")
+                # logging.info(f"TRANSFORMATION MD: {transf_md}")
 
-                # add a new flm stream, representing the transformation
-                flm_transformed = StaticFluoStream(name="flm-transformed", raw=flm_stream.raw[0])
-                flm_transformed.raw[0].metadata.update(transf_md)
+                # # add a new flm stream, representing the transformation
+                # flm_transformed = StaticFluoStream(name="flm-transformed", raw=flm_stream.raw[0])
+                # flm_transformed.raw[0].metadata.update(transf_md)
 
-                # dont match pixel size (scale not working atm)
-                flm_transformed.raw[0].metadata[model.MD_PIXEL_SIZE] = pixel_size
+                # # dont match pixel size (scale not working atm)
+                # flm_transformed.raw[0].metadata[model.MD_PIXEL_SIZE] = new_pixel_size
 
-                # add the new stream to the tab
-                self.add_streams([flm_transformed])
+                # # add the new stream to the tab
+                # self.add_streams([flm_transformed])
 
                 # hide the original flm stream in all views
                 # for v in self._tab_data_model.views.value:
                     # v.stream_tree.hideStream(flm_stream)
                 
                 # update the image in the views
-                update_image_in_views(flm_transformed, self._tab_data_model.views.value)
+                update_image_in_views(flm_stream, self._tab_data_model.views.value)
 
                 # fit the source viewports to the content, as the image may have moved
                 self._panel.vp_correlation_tl.canvas.fit_view_to_content()
