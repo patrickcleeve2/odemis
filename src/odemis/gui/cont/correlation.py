@@ -517,42 +517,20 @@ class CorrelationController(object):
         # and equal length
             if len(self.sem_features.value) == len(self.flm_features.value):
                 logging.info(f"FEATURES EQUAL LENGTH: DO TRANSFORMATION")
-
+                
+                import numpy as np
                 # TODO: implement
 
                 # calculate the order of points
 
-                # calculate scale factor
-
                 sem_points = [f.pos.value for f in self.sem_features.value]
                 flm_points = [f.pos.value for f in self.flm_features.value]
-                scale = calculate_scale_factor(sem_points, flm_points)
 
-                logging.info(f"SCALE FACTOR: {scale}")
 
                 # assume always flm -> sem
                 # calculate transformation matrix
                 src = np.array(flm_points)
                 dst = np.array(sem_points)
-
-
-
-                # MANUAL ESTIMATION
-                # R, t, s = estimate_transform(src, dst)
-
-                # logging.info(f"ROTATION: {R}")
-                # logging.info(f"TRANSLATION: {t}")
-                # logging.info(f"SCALE: {s}")
-
-                # mat = np.eye(3)
-                # Set the top-left 2x2 sub-matrix to the rotation matrix R
-                # mat[:2, :2] = R[:2, :2]
-
-                # Multiply the matrix by the scale s
-                # mat *= s
-
-                # Set the top-right 2x1 sub-matrix to the translation vector t
-                # mat[:2, 2] = t[:2]
 
                 # ODEMIS TRANSFORM
                 from odemis.util.transform import AffineTransform
@@ -574,13 +552,11 @@ class CorrelationController(object):
                 
                 # apply transformation to the selected stream
 
-                # Create a 3x3 identity matrix
-                mat = np.eye(3)
-                mat[:2, :2] = affine2.matrix
-                mat[:2, 2] = affine2.translation
+
 
                 # TODO: to matrix multiplication
                 from odemis.util.conversion import get_img_transformation_md, get_img_transformation_matrix
+                from odemis.util.transform import alt_transformation_matrix_to_implicit
 
 
                 flm_stream = None
@@ -610,94 +586,154 @@ class CorrelationController(object):
                     logging.info(f"NO STREAMS")
                     return
 
-                # assume for now other stream is SEM
+                # assume always flm -> sem (for now)
                 #         
-
                 #REF https://github.com/jni/affinder/blob/main/src/affinder/affinder.py#L74
-
 
                 import copy
 
-                # ref_m = get_img_transformation_matrix(sem_stream.raw[0].metadata)
-                ref_trans = sem_stream.raw[0].metadata[model.MD_POS]
 
-                ref_mat = np.eye(3) # reference is identity. 
-                # ref_mat[:2, :2] = ref_m
-                # ref_mat[:2, 2] = ref_trans
+                def get_tsr(mat):
+                    # Translation is the last column
+                    tx = mat[0, 2]
+                    ty = mat[1, 2]
+                    translation = np.array([tx, ty])
+
+                    # Scale is the norm of the first two columns
+                    sx = np.linalg.norm(mat[:2, 0])
+                    sy = np.linalg.norm(mat[:2, 1])
+                    scale2 = np.array([sx, sy])
+
+                    # Compute rotation
+                    rotation = np.arctan2(mat[1, 0]/sx, mat[0, 0]/sx)
+
+                    logging.info(f"Translation {translation}")
+                    logging.info(f"Scale {scale2}")
+                    logging.info(f"Rotation {rotation}")
+
+                    return translation, scale2, rotation
+                
+                USE_REF = False
+
+                # V1
+                if USE_REF:
+    
+                    ref_trans = sem_stream.raw[0].metadata[model.MD_POS]
+
+                    ref_mat = np.eye(3) # reference is identity. 
+                    # ref_mat[:2, :2] = ref_m
+                    # ref_mat[:2, 2] = ref_trans
+
+                    logging.info(f"REF MAT: {ref_mat}")
+
+                    # Create a 3x3 identity matrix
+                    mat = np.eye(3)
+                    mat[:2, :2] = affine2.matrix
+                    mat[:2, 2] = affine2.translation
+                    
+                    # transform from ref to moving
+                    mat = ref_mat @ mat
+
+                    translation, scale2, rotation = get_tsr(mat)
+                    tx, ty = translation
+                    # set MD_PIXEL_SIZE_COR to 1/scale2
+                    flm_stream.raw[0].metadata[model.MD_PIXEL_SIZE_COR] = (1/scale2[0], 1/scale2[1])
+
+                    # set MD_POS_COR to translation
+                    sem_pos = sem_stream.raw[0].metadata[model.MD_POS]
+                    flm_stream.raw[0].metadata[model.MD_POS_COR] = (tx, ty)
+
+                    # set MD_ROTATION_COR to rotation
+                    flm_stream.raw[0].metadata[model.MD_ROTATION_COR] = rotation
+
+                    # classically, we would just apply the transformation to the reference frame 
+                    # and then apply the inverse to the moving frame.
+                    # but odemis uses metadata, not the affine to transform the image
+                    # so we need to convert the affine to metadata (t, r, s) and then apply them as corrections
+                    # to the moving frame -> MD_POS_COR, MD_ROTATION_COR, MD_PIXEL_SIZE_COR
+                    # this should translation, rotate, and scale the moving frame to match the reference frame
+
+                    # alternatively, we can just set the metadata to the transformation matrix directly
+                    # MD_POS, MD_ROTATION, MD_PIXEL_SIZE
 
 
 
-                logging.info(f"REF MAT: {ref_mat}")
 
-                # multiply the transformation matrix by the reference matrix
-                mat = ref_mat @ mat
+                ####### V2
+                if not USE_REF:
+                    mat = np.eye(3)
+                    mat[:2, :2] = affine1.matrix
+                    mat[:2, 2] = affine1.translation
 
-                logging.info(f"TRANSFORMATION MATRIX: {mat}")
+                    translation, scale2, rotation = get_tsr(mat)
 
-                # Translation is the last column
-                tx = mat[0, 2]
-                ty = mat[1, 2]
-                translation = np.array([tx, ty])
+                    # copy initial flm pixel size
+                    offset_stream = sem_stream
+                    pixel_size  = copy.deepcopy(offset_stream.raw[0].metadata[model.MD_PIXEL_SIZE])
+                    new_pixel_size = (pixel_size[0] * scale2[0], pixel_size[1] * scale2[1])
+                    transf_md = copy.deepcopy(get_img_transformation_md(mat, flm_stream.raw[0], sem_stream.raw[0]))
 
-                # Scale is the norm of the first two columns
-                sx = np.linalg.norm(mat[:2, 0])
-                sy = np.linalg.norm(mat[:2, 1])
-                scale2 = np.array([sx, sy])
+                    # subtract half the width / height of the sem image
+                    shape = offset_stream.raw[0].shape
 
-                # Compute rotation
-                rotation = np.arctan2(mat[1, 0]/sx, mat[0, 0]/sx)
+                    pos = transf_md[model.MD_POS]
 
-                print("Translation: ", translation)
-                print("Scale: ", scale2)
-                print("Rotation in radians: ", rotation)
+                    # subtract half the width / height of the moving? image
+                    pos2 = (pos[0] + (shape[1] / 2 * new_pixel_size[0]), 
+                                            pos[1] - (shape[0] / 2 * new_pixel_size[1]))
+                
+                    if len(pos) == 3:
+                        pos2 = (pos2[0], pos2[1], pos[2])
+
+                    logging.info(f"TRANSFORMATION MD: {transf_md}")
+                    logging.info(f"TRANSLATION: {translation}")
+
+                    # USING INVERSE TRANSFORMATION
+                    # flm_stream.raw[0].metadata[model.MD_POS] = pos2
+                    # flm_stream.raw[0].metadata[model.MD_PIXEL_SIZE_COR] = (1/scale2[0], 1/scale2[1])
+                    # flm_stream.raw[0].metadata[model.MD_ROTATION_COR] = -transf_md[model.MD_ROTATION]
+
+
+                    # # calculate the position correction
+                    # x_factor, y_factor = np.cos(transf_md[model.MD_ROTATION]), np.sin(transf_md[model.MD_ROTATION])
+                    # x_offset = (shape[1] / 2 * new_pixel_size[0]) * x_factor - (shape[0] / 2 * new_pixel_size[1]) * y_factor
+                    # y_offset = (shape[1] / 2 * new_pixel_size[0]) * y_factor + (shape[0] / 2 * new_pixel_size[1]) * x_factor
+
+                    # logging.info(f"X OFFSET: {x_offset}, Y OFFSET: {y_offset}")
+
+                    x2, y2 = (shape[1] / 2 * new_pixel_size[0]), (shape[0] / 2 * new_pixel_size[1])
+                    logging.info(f"X2: {x2}, Y2: {y2}")
+
+                    # V3
+                    flm_stream.raw[0].metadata[model.MD_POS] = pos
+                    flm_stream.raw[0].metadata[model.MD_POS_COR] = -x2, y2
+                    flm_stream.raw[0].metadata[model.MD_PIXEL_SIZE_COR] = (scale2[0], scale2[1])
+                    flm_stream.raw[0].metadata[model.MD_ROTATION_COR] = transf_md[model.MD_ROTATION]
+
+
+                    # NOTES:
+                    # if i just use the pos (translation) directly, the image always ends up in the top left corner of the sem image
+                    # it is almost exactly hafl the image width / height away, but not exactly
+                    # but not exactly.
+                    # im not sure why the transform works like that. Is this a side effect of get_img_transformation_md?
+                    # do i just need to add an additional offset to the translation? why? 
+                    # scale and rotation are acccurate.
+                    # im very confused
 
 
 
-                # set MD_PIXEL_SIZE_COR to 1/scale2
-                flm_stream.raw[0].metadata[model.MD_PIXEL_SIZE_COR] = (1/scale2[0], 1/scale2[1])
+                    # add a new flm stream, representing the transformation
+                    # flm_transformed = StaticFluoStream(name="flm-transformed", raw=flm_stream.raw[0])
+                    # flm_transformed.raw[0].metadata.update(transf_md)
+                    # dont match pixel size (scale not working atm)
+                    # flm_transformed.raw[0].metadata[model.MD_PIXEL_SIZE] = new_pixel_size
 
-                # set MD_POS_COR to translation
-                sem_pos = sem_stream.raw[0].metadata[model.MD_POS]
-                flm_stream.raw[0].metadata[model.MD_POS_COR] = (tx, ty)
+                    # add the new stream to the tab
+                    # self.add_streams([flm_transformed])
 
-                # set MD_ROTATION_COR to rotation
-                flm_stream.raw[0].metadata[model.MD_ROTATION_COR] = rotation
-
-                # copy initial flm pixel size
-                # pixel_size  = copy.deepcopy(flm_stream.raw[0].metadata[model.MD_PIXEL_SIZE])
-                # new_pixel_size = (pixel_size[0] * 1/scale2[0], pixel_size[1] * 1/scale2[1])
-                # transf_md = copy.deepcopy(get_img_transformation_md(mat, flm_stream.raw[0], sem_stream.raw[0]))
-
-                # # subtract half the width / height of the sem image
-                # shape = flm_stream.raw[0].shape
-
-                # # pixel_size = transf_md[model.MD_PIXEL_SIZE]
-                # pos = transf_md[model.MD_POS]
-
-                # # subtract half the width / height of the sem image
-
-                # pos2 = (pos[0] + shape[1] / 2 * new_pixel_size[0], 
-                #                         pos[1] - shape[0] / 2 * new_pixel_size[1])
-            
-                # if len(pos) == 3:
-                #     pos2 = (pos2[0], pos2[1], pos[2])
-                # transf_md[model.MD_POS] = pos2
-
-                # logging.info(f"TRANSFORMATION MD: {transf_md}")
-
-                # # add a new flm stream, representing the transformation
-                # flm_transformed = StaticFluoStream(name="flm-transformed", raw=flm_stream.raw[0])
-                # flm_transformed.raw[0].metadata.update(transf_md)
-
-                # # dont match pixel size (scale not working atm)
-                # flm_transformed.raw[0].metadata[model.MD_PIXEL_SIZE] = new_pixel_size
-
-                # # add the new stream to the tab
-                # self.add_streams([flm_transformed])
-
-                # hide the original flm stream in all views
-                # for v in self._tab_data_model.views.value:
-                    # v.stream_tree.hideStream(flm_stream)
+                    # hide the original flm stream in all views
+                    # for v in self._tab_data_model.views.value:
+                    #     v.stream_tree.hideStream(flm_stream)
                 
                 # update the image in the views
                 update_image_in_views(flm_stream, self._tab_data_model.views.value)
@@ -713,74 +749,3 @@ class CorrelationController(object):
         else:
             logging.info(f"NOT ENOUGH FEATURES")
             
-import numpy as np
-
-def calculate_scale_factor(src: list[float], dst: list[float]) -> float:
-    """
-    Calculate the scale factor between two sets of coordinates.
-
-    Parameters
-    ----------
-    src : (M, 2) array
-        Source coordinates.
-    dst : (M, 2) array
-        Destination coordinates.
-
-    Returns
-    -------
-    scale : float
-        Scale factor.
-    """
-    src_distances = np.sqrt(np.sum(np.diff(src, axis=0)**2, axis=1))
-    dst_distances = np.sqrt(np.sum(np.diff(dst, axis=0)**2, axis=1))
-
-    scale = np.mean(dst_distances) / np.mean(src_distances)
-
-    return scale
-
-
-import numpy as np
-from scipy.spatial.transform import Rotation as R
-
-def estimate_transform(src, dst):
-    """
-    Estimate the transformation parameters given two sets of 3D points.
-
-    Parameters
-    ----------
-    src : (M, 3) array
-        Source coordinates.
-    dst : (M, 3) array
-        Destination coordinates.
-
-    Returns
-    -------
-    R : (3, 3) array
-        Estimated rotation matrix.
-    t : (3,) array
-        Estimated translation vector.
-    s : float
-        Estimated scale factor.
-    """
-    src_mean = src.mean(axis=0)
-    dst_mean = dst.mean(axis=0)
-
-    src_demean = src - src_mean
-    dst_demean = dst - dst_mean
-
-    A = np.dot(dst_demean.T, src_demean) / src_demean.size
-
-    U, S, V = np.linalg.svd(A)
-
-    R = np.dot(U, V)
-
-    if np.linalg.det(R) < 0:
-       # Reflection detected
-       V[-1,:] *= -1
-       R = np.dot(U, V)
-
-    s = np.sum(S) / np.sum(src_demean ** 2)
-
-    t = dst_mean - s * np.dot(src_mean, R.T)
-
-    return R, t, s
