@@ -621,7 +621,7 @@ class TiledAcquisitionTask(object):
             elif stream.focuser and len(self._zlevels) == 1:
                 z = self._zlevels[0]
                 logging.debug(f"Moving focus for tile {ix}x{iy} to {z}.")
-                stream.focuser.moveAbsSync({'z': z})
+                stream.focuser.moveAbsSync({'z': z}) # SETS FOCUS POINT
                 # Acquire a single image of the stream
                 da = self._acquireStreamTile(i, ix, iy, stream)
             else:
@@ -716,7 +716,7 @@ class TiledAcquisitionTask(object):
             z = self._get_triangulated_focus_point(current_pos["x"], current_pos["y"])
         else:
             z = self._focus_points[0][2]
-        logging.info(f"Found z focus: {z}")
+        logging.info(f"Found z focus: {z}") # GETS FOCUS POINT
         self._zlevels = self._get_zstack_levels(z)
 
     def _get_zstack_levels(self, focus_value):
@@ -727,7 +727,7 @@ class TiledAcquisitionTask(object):
         """
         # When initial z level is one or None, use the current focus value
         if len(self._init_zlevels) <= 1:
-            return [focus_value, ]
+            return [focus_value, ] # NO ZSTACK STEPS
 
         zlevels = self._init_zlevels + focus_value
 
