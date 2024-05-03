@@ -1870,7 +1870,7 @@ def _saveAsMultiTiffLT(filename, ldata, thumbnail, compressed=True, multiple_fil
         tags = _convertToTiffTag(data.metadata)
         if ometxt:  # save OME tags if not yet done
             # If thumbnail is present, the tiff file is not compatible with ImageJ
-            f.SetField(T.TIFFTAG_IMAGEDESCRIPTION, imagej_description.encode('ascii') + ometxt)
+            f.SetField(T.TIFFTAG_IMAGEDESCRIPTION, ometxt) #+ imagej_description.encode('ascii'))
             ometxt = None
 
         # if metadata indicates YXC format just handle it as RGB
