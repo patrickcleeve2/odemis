@@ -479,7 +479,7 @@ class StreamBarController(object):
         """
         return self._add_stream(stream, **kwargs)
 
-    def _add_stream(self, stream, add_to_view=False, visible=True, play=None):
+    def _add_stream(self, stream, add_to_view=False, visible=True, play=None, removable=False):
         """ Add the given stream to the tab data model and appropriate views
 
         Args:
@@ -492,6 +492,7 @@ class StreamBarController(object):
                 create any entry.
             play (None or boolean): If True, immediately start it, if False, let it stopped, and if
                 None, only play if already a stream is playing.
+            removable (boolean): Display a remove button on the stream panel
 
         Returns:
             (StreamController or Stream): the stream controller or stream (if visible is False) that
@@ -549,13 +550,14 @@ class StreamBarController(object):
                                                 locked=self.locked_mode,
                                                 static=self.static_mode,
                                                 view=linked_view,
+                                                removable=removable,
                                                 )
             return stream_cont
         else:
             return stream
 
-    def _add_stream_cont(self, stream, show_panel=True, locked=False, static=False,
-                         view=None):
+    def _add_stream_cont(self, stream, show_panel=True, locked=False, static=False, 
+                         removable=False, view=None):
         """ Create and add a stream controller for the given stream
 
         :return: (StreamController)
@@ -569,6 +571,9 @@ class StreamBarController(object):
             stream_cont.to_locked_mode()
         elif static:
             stream_cont.to_static_mode()
+
+        if removable:
+            stream_cont.stream_panel.show_remove_btn(removable)
 
         self.stream_controllers.append(stream_cont)
 
