@@ -492,7 +492,7 @@ class StreamBarController(object):
                 create any entry.
             play (None or boolean): If True, immediately start it, if False, let it stopped, and if
                 None, only play if already a stream is playing.
-            removable (boolean): Display a remove button on the stream panel
+            removable (boolean): Display a remove button on the stream panel. 
 
         Returns:
             (StreamController or Stream): the stream controller or stream (if visible is False) that
@@ -2096,8 +2096,7 @@ class CryoAcquiredStreamsController(CryoStreamsController):
         # could just hide/show them the same way it's done when switching view.
         self._feature_view.addStream(stream)
         sc = self._add_stream_cont(stream, show_panel=True, static=self.static_mode,
-                                   view=self._feature_view)
-        sc.stream_panel.show_remove_btn(True)
+                                   view=self._feature_view, removable=True)
         return sc
 
     @call_in_wx_main

@@ -194,8 +194,7 @@ class CorrelationController(object):
             self._tab_data_model.streams.value.append(s)
 
             # add stream to streambar
-            sc = self._tab.streambar_controller.addStream(s, add_to_view=True, play=False)
-            sc.stream_panel.show_remove_btn(True)
+            self._tab.streambar_controller.addStream(s, add_to_view=True, play=False, removable=True)
 
     def add_to_localization_tab(self, streams: list) -> None:
         """add streams to the localization tab
