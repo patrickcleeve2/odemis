@@ -37,7 +37,7 @@ from odemis.acq import acqmng, path, stitching, stream
 from odemis.acq.stitching import (REGISTER_IDENTITY, WEAVER_MEAN,
                                   FocusingMethod, acquireOverview)
 from odemis.acq.stream import (NON_SPATIAL_STREAMS, EMStream, LiveStream,
-                               OpticalStream, ScannedFluoStream)
+                               OpticalStream, ScannedFluoStream, SEMStream, FIBStream)
 from odemis.gui.preset import (apply_preset, get_global_settings_entries,
                                get_local_settings_entries, preset_as_is,
                                presets)
@@ -654,6 +654,12 @@ class OverviewAcquisitionDialog(xrcfr_overview_acq):
         save_dir = self.conf.last_path
         if isinstance(orig_tab_data, guimodel.CryoGUIData):
             save_dir = self.conf.pj_last_path
+        self.fibsem_mode = isinstance(orig_tab_data, guimodel.CryoFIBSEMGUIData)
+
+        # hide optical settings / stream panel when in fibsem mode
+        self.fp_settings_secom_optical.Show(not self.fibsem_mode)
+        self.pnl_opt_streams.Show(not self.fibsem_mode)
+
         self.filename = create_filename(save_dir, "{datelng}-{timelng}-overview",
                                               ".ome.tiff")
         assert self.filename.endswith(".ome.tiff")
@@ -780,18 +786,25 @@ class OverviewAcquisitionDialog(xrcfr_overview_acq):
         # imprecision, all the tiles will overlap or at worse be next to each other (i.e. , no space between tiles)
         self.overlap = 0.10
         try:
+            if self.fibsem_mode:
+                self.stage = self._main_data_model.stage_bare
+                range_md = model.MD_SEM_IMAGING_RANGE
+            else:
+                self.stage = self._main_data_model.stage
+                range_md = model.MD_POS_ACTIVE_RANGE
+
             # Use the stage range, which can be overridden by the MD_POS_ACTIVE_RANGE.
             # Note: this last one might be temporary, until we have a RoA tool provided in the GUI.
             self._tiling_rng = {
-                "x": self._main_data_model.stage.axes["x"].range,
-                "y": self._main_data_model.stage.axes["y"].range
+                "x": self.stage.axes["x"].range,
+                "y": self.stage.axes["y"].range
             }
 
-            stage_md = self._main_data_model.stage.getMetadata()
-            if model.MD_POS_ACTIVE_RANGE in stage_md:
-                self._tiling_rng.update(stage_md[model.MD_POS_ACTIVE_RANGE])
+            stage_md = self.stage.getMetadata()
+            if range_md in stage_md:
+                self._tiling_rng.update(stage_md[range_md])
         except (KeyError, IndexError):
-            raise ValueError("Failed to find stage.MD_POS_ACTIVE_RANGE with x and y range")
+            raise ValueError(f"Failed to find stage {range_md} with x and y range")
 
         # Note: It should never be possible to reach here with no streams
         streams = self.get_acq_streams()
@@ -848,7 +861,8 @@ class OverviewAcquisitionDialog(xrcfr_overview_acq):
             if not isinstance(s, LiveStream):
                 continue
 
-            self.streambar_controller.addStream(s, add_to_view=self._view)
+            sc = self.streambar_controller.addStream(s, add_to_view=self._view)
+            sc.stream_panel.show_remove_btn(True)
 
     def remove_all_streams(self):
         """
@@ -1004,6 +1018,18 @@ class OverviewAcquisitionDialog(xrcfr_overview_acq):
         """
         self.update_setting_display()
 
+        # if all the streams are SEMStream or FIBStream, disable z-stack acquistion
+        z_stack_disabled = all([isinstance(s, (SEMStream, FIBStream))
+                                for s in self.get_acq_streams()])
+        if z_stack_disabled:
+            self.zstep_size_ctrl.Hide()
+            self.zstep_size_label.Hide()
+            self.zstack_steps.Hide()
+            self.zstack_steps_label.Hide()
+
+            # set steps to 1 to override the existing z-stack acquisition
+            self.zsteps.value = 1
+
     def on_tiles_number(self, _=None):
         """
         Called when the user enters values for the tiles number in the GUI.
@@ -1038,7 +1064,7 @@ class OverviewAcquisitionDialog(xrcfr_overview_acq):
 
             if self.autofocus_roi_ckbox.value:
                 acq_time = stitching.estimateOverviewTime(streams,
-                                                          self._main_data_model.stage,
+                                                          self.stage,
                                                           areas,
                                                           self._main_data_model.focus,
                                                           self._main_data_model.ccd,
@@ -1053,7 +1079,7 @@ class OverviewAcquisitionDialog(xrcfr_overview_acq):
                 # If there are several areas, the autofocus should be automatically selected
                 # => no autofocus only works with a single area
                 acq_time = stitching.estimateTiledAcquisitionTime(streams,
-                                                                  self._main_data_model.stage,
+                                                                  self.stage,
                                                                   areas[0], self.overlap,
                                                                   zlevels=zlevels,
                                                                   focusing_method=focus_mtd)
@@ -1241,7 +1267,7 @@ class OverviewAcquisitionDialog(xrcfr_overview_acq):
             # acquireOverview() needs relative zlevels, as they will be used relative to the focus points found
             zlevels = self._get_zstack_levels(rel=True)
             self.acq_future = acquireOverview(acq_streams,
-                                              self._main_data_model.stage,
+                                              self.stage,
                                               areas,
                                               self._main_data_model.focus,
                                               self._main_data_model.ccd,
@@ -1257,7 +1283,7 @@ class OverviewAcquisitionDialog(xrcfr_overview_acq):
             # If there are several areas, the autofocus should be automatically selected
             # => no autofocus only works with a single area
             zlevels = self._get_zstack_levels(rel=False)
-            self.acq_future = stitching.acquireTiledArea(acq_streams, self._main_data_model.stage, area=areas[0],
+            self.acq_future = stitching.acquireTiledArea(acq_streams, self.stage, area=areas[0],
                                                          overlap=self.overlap,
                                                          settings_obs=self._main_data_model.settings_obs,
                                                          log_path=self.filename_tiles,

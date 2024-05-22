@@ -135,6 +135,7 @@ class MainGUIData(object):
         "descanner": "descanner",
         "mppc": "mppc",
         "ion-beam": "ion_beam",
+        "ion-focus": "ion_focus",
         "ebeam-shift": "beamshift",
         "diagnostic-ccd": "ccd",
         "det-rotator": "det_rotator",
@@ -216,6 +217,7 @@ class MainGUIData(object):
         self.descanner = None  # descan mirrors of the fastem microscope
         self.mppc = None  # detector of the fastem microscope
         self.ion_beam = None
+        self.ion_focus = None
         self.beamshift = None  # beam shift deflection controller
         self.det_rotator = None  # detector rotator of the fastem microscope
         self.ion_sed = None  # detector for the ions of a composited detector component
@@ -288,6 +290,9 @@ class MainGUIData(object):
                     required_roles += ["ion-beam", "se-detector-ion"]
             elif self.role == "meteor":
                 required_roles += ["light", "stage", "focus"]
+                # add additional roles when fibsem control enabled
+                if any([c.role == "fibsem" for c in components]):
+                    required_roles += ["e-beam", "se-detector", "ion-beam", "se-detector-ion"]
             elif self.role == "mimas":
                 required_roles += ["light", "stage", "focus", "align", "ion-beam"]
             elif self.role in ("sparc", "sparc2"):

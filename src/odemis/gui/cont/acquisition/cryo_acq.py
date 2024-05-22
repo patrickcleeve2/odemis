@@ -40,6 +40,7 @@ from odemis import model, dataio
 from odemis.acq import acqmng, stream
 from odemis.acq.stream import FluoStream, StaticStream, BrightfieldStream
 from odemis.gui import conf
+from odemis.gui import model as guimod
 from odemis.gui.cont.acquisition._constants import VAS_NO_ACQUISITION_EFFECT
 from odemis.gui.cont.acquisition.overview_stream_acq import OverviewStreamAcquiController
 from odemis.gui.util import call_in_wx_main, wxlimit_invocation
@@ -143,6 +144,17 @@ class CryoAcquiController(object):
         )
 
         self._tab_data.main.is_acquiring.subscribe(self._on_acquisition, init=True)
+
+        # hide z-stack controls for fibsem
+        if isinstance(self._tab_data, guimod.CryoFIBSEMGUIData):
+            self._panel.z_stack_chkbox.Hide()
+            self._panel.param_Zmin.Hide()
+            self._panel.param_Zmin_label.Hide()
+            self._panel.param_Zmax.Hide()
+            self._panel.param_Zmax_label.Hide()
+            self._panel.param_Zstep.Hide()
+            self._panel.param_Zstep_label.Hide()
+            self._panel.Layout()
 
     @call_in_wx_main
     def _on_acquisition(self, is_acquiring: bool):
