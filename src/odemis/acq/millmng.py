@@ -555,3 +555,209 @@ def estimate_milling_time(*args, **kwargs) -> float:
     """
     milling_task = MillingRectangleTask(None, *args, **kwargs)
     return milling_task.estimate_milling_time()
+
+
+class MillingSettings2:
+    """Represents milling settings for a single milling task"""
+
+    def __init__(self, current: float, voltage: float, field_of_view: float, mode: str = "Serial", channel: str = "ion"):
+        self.current = model.FloatContinuous(current, unit="A", range=(20e-12, 120e-9))  # TODO: migrate to float enum after testing
+        self.voltage = model.FloatContinuous(voltage, unit="V", range=(0, 30e3))         # TODO: migrate to float enum after testing
+        self.field_of_view = model.FloatContinuous(field_of_view, unit="m", range=(50e-06, 960e-06))
+        self.mode = model.StringEnumerated(mode, choices=set(["Serial", "Parallel"]))
+        self.channel = model.StringEnumerated(channel, choices=set(["ion"])) # TODO: add support for electron milling
+
+    def to_json(self) -> dict:
+        return {"current": self.current.value,
+                "voltage": self.voltage.value,
+                "field_of_view": self.field_of_view.value,
+                "mode": self.mode.value,
+                "channel": self.channel.value}
+
+    def __repr__(self):
+        return f"{self.to_json()}"
+
+# TODO: migrate these to ABC, dataclass for Rectangle, Line, Circle, etc.
+class MillingPatternParameters:
+    """Represents milling pattern parameters"""
+
+    def __init__(self, width: float, height: float, depth: float, rotation: float = 0.0, center = (0, 0), scan_direction: str = "TopToBottom", name: str = "Rectangle"):
+        self.name = model.StringVA(name)
+        self.width = model.FloatContinuous(width, unit="m", range=(1e-9, 900e-6))
+        self.height = model.FloatContinuous(height, unit="m", range=(1e-9, 900e-6))
+        self.depth = model.FloatContinuous(depth, unit="m", range=(1e-9, 100e-6))
+        self.rotation = model.FloatContinuous(rotation, unit="rad", range=(0, 2 * math.pi))
+        self.center = model.TupleContinuous(center, unit="m", range=((-1e3, -1e3), (1e3, 1e3)), cls=(int, float))
+        self.scan_direction = model.StringEnumerated(scan_direction, choices=set(["TopToBottom", "BottomToTop", "LeftToRight", "RightToLeft"]))
+
+    def to_json(self) -> dict:
+        return {"name": self.name.value,
+                "width": self.width.value,
+                "height": self.height.value,
+                "depth": self.depth.value,
+                "rotation": self.rotation.value,
+                "center_x": self.center.value[0],
+                "center_y": self.center.value[1],
+                "scan_direction": self.scan_direction.value}
+
+    def __repr__(self):
+        return f"{self.to_json()}"
+
+class MillingTaskSettings:
+    milling: MillingSettings2           # MillingSettings2
+    patterns: list                      # list[MillingPatternParameters]
+    drift_correction: dict              # NotYetImplemented
+
+    def __init__(self, milling: dict, patterns: list):
+        self.milling = milling
+        self.patterns = patterns
+
+    def to_json(self) -> dict:
+        return {"milling": self.milling, "patterns": [pattern.to_json() for pattern in self.patterns]}
+
+class MillingTask:
+    """This class represents a standard Milling Task."""
+
+    def __init__(self, future: futures.Future, settings: MillingTaskSettings):
+        """
+        :param future: (ProgressiveFuture) the future that will be executing the task
+        :param settings: (MillingTaskSettings) the settings representing the milling task
+        """
+
+        self.microscope = model.getComponent(role="fibsem")
+        self.settings = settings
+
+        self._future = future
+        if future is not None:
+            self._future.running_subf = model.InstantaneousFuture()
+            self._future._task_lock = threading.Lock()
+
+    def cancel(self, future: "Future") -> bool:
+        """
+        Canceler of acquisition task.
+        :param future: the future that will be executing the task
+        :return: True if it successfully cancelled (stopped) the future
+        """
+        logging.debug("Canceling milling procedure...")
+
+        with future._task_lock:
+            if future._task_state == FINISHED:
+                return False
+            future._task_state = CANCELLED
+            future.running_subf.cancel()
+            self.microscope.stop_milling()
+            logging.debug("Milling procedure cancelled.")
+        return True
+
+    def estimate_milling_time(self) -> float:
+        """
+        Estimates the milling time for the given patterns.
+        :return: (float > 0): the estimated time is in seconds
+        """
+        return self.microscope.estimate_milling_time()
+
+    def run_milling(self, settings: MillingTaskSettings):
+        """Run the milling task with the given settings. ThermoFisher implementation"""
+        microscope = self.microscope
+
+        # get the milling settings
+        milling_current = settings.milling.current.value
+        milling_voltage = settings.milling.voltage.value
+        milling_fov = settings.milling.field_of_view.value
+        milling_channel = settings.milling.channel.value
+
+        # get initial imaging settings
+        imaging_current = microscope.get_beam_current(milling_channel)
+
+        # error management
+        ce = False
+        try:
+
+            # set the milling state
+            microscope.clear_patterns()
+            microscope.set_beam_current(milling_current, milling_channel)
+            microscope.set_field_of_view(milling_fov, milling_channel)
+
+            # draw milling patterns to screen
+            for pattern in settings.patterns:
+                microscope.create_rectangle(pattern.to_json())
+
+            # estimate the milling time
+            estimated_time = microscope.estimate_milling_time()
+            self._future.set_end_time(time.time() + estimated_time)
+
+            # start patterning (async)
+            microscope.start_milling()
+
+            # wait for milling to finish
+            elapsed_time = 0
+            wait_time = 5
+            while microscope.get_patterning_state() == "Running":
+
+                with self._future._task_lock:
+                    if self._future.cancelled() == CANCELLED:
+                        raise CancelledError()
+
+                logging.info(f"Milling in progress... {elapsed_time} / {estimated_time}")
+                time.sleep(wait_time)
+                elapsed_time += wait_time
+
+        except CancelledError as ce:
+            logging.info(f"Cancelled milling: {ce}")
+        except Exception as e:
+            logging.error(f"Error while milling: {e}")
+        finally:
+            # restore imaging state
+            microscope.set_beam_current(imaging_current, milling_channel)
+            microscope.set_active_view(2) # ion beam
+            microscope.clear_patterns()
+
+            if ce:
+                raise ce # future excepts error to be raised
+        return
+
+    def run(self):
+        """
+        The main function of the task class, which will be called by the future asynchronously
+        """
+        self._future._task_state = RUNNING
+
+        try:
+
+            with self._future._task_lock:
+                if self._future._task_state == CANCELLED:
+                    raise CancelledError()
+
+            self.run_milling(self.settings)
+            logging.debug("The milling completed")
+
+        except CancelledError:
+            logging.debug("Stopping because milling was cancelled")
+            raise
+        except Exception:
+            logging.exception("The milling failed")
+            raise
+        finally:
+            self._future._task_state = FINISHED
+
+
+def mill_patterns(settings: MillingTaskSettings) -> futures.Future:
+    """
+    Run Mill patterns.
+    :param settings: (MillingTaskSettings) Settings for the milling task
+    :return: ProgressiveFuture
+    """
+    # Create a progressive future with running sub future
+    future = model.ProgressiveFuture()
+    # create acquisition task
+    milling_task = MillingTask(future, settings)
+    # add the ability of cancelling the future during execution
+    future.task_canceller = milling_task.cancel
+
+    # set the progress of the future (TODO: fix dummy time estimate)
+    future.set_end_time(time.time() + 10 * len(settings.patterns))
+
+    # assign the acquisition task to the future
+    executeAsyncTask(future, milling_task.run)
+
+    return future
