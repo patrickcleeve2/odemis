@@ -80,3 +80,4 @@ magic.odm.yaml
 # vscode settings
 .vscode/*
 *.code-workspace
+src/odemis/driver/client_notebook.ipynb
