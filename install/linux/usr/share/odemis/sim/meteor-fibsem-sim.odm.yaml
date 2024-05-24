@@ -20,14 +20,15 @@ METEOR-Sim: {
   class: autoscript_client.FIBSEM,
   role: fibsem,
   init: {
-    # address: "PYRO:Microscope@192.168.6.5:4242",  # real
-    address: "PYRO:Microscope@localhost:4242",    # simulator
+    # address: "192.168.6.5",  # real
+    address: "localhost",    # simulator
+    port: "4242"
   },
   children: {
     stage: "Stage",
-    scanner: "Electron-Beam",
-    detector: "Electron-Detector",
-    ebeam-focus: "Electron-Focus",
+    sem-scanner: "Electron-Beam",
+    sem-detector: "Electron-Detector",
+    sem-focus: "Electron-Focus",
     fib-scanner: "Ion-Beam",
     fib-detector: "Ion-Detector",
     fib-focus: "Ion-Focus",

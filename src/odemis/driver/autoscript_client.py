@@ -45,16 +45,10 @@ from odemis.model import (CancellableFuture, CancellableThreadPoolExecutor,
 Pyro5.api.config.SERIALIZER = 'msgpack'
 msgpack_numpy.patch()
 
-XT_RUN = "run"
-XT_STOP = "stop"
-
 # Acquisition control messages
 GEN_START = "S"  # Start acquisition
 GEN_STOP = "E"  # Don't acquire image anymore
 GEN_TERM = "T"  # Stop the generator
-
-# Value to use on the FASTEM to activate the immersion mode
-COMPOUND_LENS_FOCUS_IMMERSION = 2.0
 
 # List of known supported resolutions.
 # Although the API only provide the min/max of resolution in X/Y, not every value
@@ -201,7 +195,7 @@ def check_latest_package(
 
 
 # information on compatible versions
-info = f"""PYRO 5: {pkg_resources.get_distribution('Pyro5').version},
+debug_connection_info = f"""PYRO 5: {pkg_resources.get_distribution('Pyro5').version},
 msgpack-numpy: {pkg_resources.get_distribution('msgpack-numpy').version},
 msgpack_numpy_file: {msgpack_numpy.__file__},
 msgpack version: {pkg_resources.get_distribution('msgpack').version}
@@ -221,27 +215,23 @@ class FIBSEM(model.HwComponent):
     Microscope server is done via Pyro5.
     """
 
-    def __init__(self, name, role, children, address, daemon=None,
+    def __init__(self, name, role, children, address, port: str ='4242', daemon=None,
                  **kwargs):
         """
         Parameters
         ----------
         address: str
-            server address and port of the Microscope server, e.g. "PYRO:Microscope@localhost:4242"
+            server ip address for the microscope server (sim address is localhost)
+        port: str
+            server port of the Microscope server, default is '4242'
         timeout: float
             Time in seconds the client should wait for a response from the server.
         """
 
-        # print versions of msgpack, msgpack-numpy, pyro
-        print("msgpack version: %s", pkg_resources.get_distribution("msgpack").version)
-        print("msgpack-numpy version: %s", pkg_resources.get_distribution("msgpack-numpy").version)
-        print("Pyro5 version: %s", pkg_resources.get_distribution("Pyro5").version)
-        print("Pyro4 version: %s", pkg_resources.get_distribution("Pyro4").version)
-
         model.HwComponent.__init__(self, name, role, daemon=daemon, **kwargs)
         self._proxy_access = threading.Lock()
         try:
-            self.server = Pyro5.api.Proxy(address)
+            self.server = Pyro5.api.Proxy(f"PYRO:Microscope@{address}:{port}")
             self.server._pyroTimeout = 30  # seconds
             self._swVersion = self.server.get_software_version()
             self._hwVersion = self.server.get_hardware_version()
@@ -251,7 +241,7 @@ class FIBSEM(model.HwComponent):
         except CommunicationError as err:
             raise HwError("Failed to connect to autoscript server '%s'. Check that the "
                           "uri is correct and autoscript server is"
-                          " connected to the network. %s %s" % (address, err, info))
+                          " connected to the network. %s %s" % (address, err, debug_connection_info))
         except OSError as err:
             raise HwError("XT server reported error: %s." % (err,))
 
@@ -261,17 +251,17 @@ class FIBSEM(model.HwComponent):
 
         # Create the scanner type child(ren)
         # Check if at least one of the required scanner types is instantiated
-        scanner_types = ["scanner", "fib-scanner"]  # All allowed scanners types
+        scanner_types = ["sem-scanner", "fib-scanner"]  # All allowed scanners types
         if not any(scanner_type in children for scanner_type in scanner_types):
             raise KeyError("FIBSEM was not given any scanner as child. "
-                           "One of 'scanner', 'fib-scanner' or 'mb-scanner' need to be included as child")
+                           "One of 'sem-scanner', 'fib-scanner' need to be included as child")
 
-        has_detector = "detector" in children
+        has_sem_detector = "sem-detector" in children
         has_fib_detector = "fib-detector" in children
 
-        if "scanner" in children: # TODO: rename to sem-scanner
-            kwargs = children["scanner"]
-            self._scanner = Scanner(parent=self, daemon=daemon, channel="electron", has_detector=has_detector, **kwargs)
+        if "sem-scanner" in children:
+            kwargs = children["sem-scanner"]
+            self._scanner = Scanner(parent=self, daemon=daemon, channel="electron", has_detector=has_sem_detector, **kwargs)
             self.children.value.add(self._scanner)
 
         if "fib-scanner" in children:
@@ -285,15 +275,9 @@ class FIBSEM(model.HwComponent):
             self._stage = Stage(parent=self, daemon=daemon, **ckwargs)
             self.children.value.add(self._stage)
 
-        # # create the chamber child, if requested
-        # if "chamber" in children:
-        #     ckwargs = children["chamber"]
-        #     self._chamber = Chamber(parent=self, daemon=daemon, **ckwargs)
-        #     self.children.value.add(self._chamber)
-
         # create a focuser, if requested
-        if "ebeam-focus" in children:
-            ckwargs = children["ebeam-focus"]
+        if "sem-focus" in children:
+            ckwargs = children["sem-focus"]
             self._focus = Focus(parent=self, daemon=daemon, channel="electron", **ckwargs)
             self.children.value.add(self._focus)
 
@@ -302,8 +286,9 @@ class FIBSEM(model.HwComponent):
             self._fib_focus = Focus(parent=self, daemon=daemon, channel="ion", **ckwargs)
             self.children.value.add(self._fib_focus)
 
-        if "detector" in children:
-            ckwargs = children["detector"]
+        # create a detector, if requested
+        if "sem-detector" in children:
+            ckwargs = children["sem-detector"]
             self._detector = Detector(parent=self, daemon=daemon, channel="electron", **ckwargs)
             self.children.value.add(self._detector)
 
@@ -580,7 +565,6 @@ class FIBSEM(model.HwComponent):
         """
         :param dwell_time: (float) the dwell time in seconds.
         :param channel: (str) Name of the channel to set the dwell time for.
-
         """
         with self._proxy_access:
             self.server._pyroClaimOwnership()
@@ -1212,6 +1196,7 @@ class FIBSEM(model.HwComponent):
             self.server._pyroClaimOwnership()
             return self.server.estimate_milling_time()
 
+
 class Scanner(model.Emitter):
     """
     This is an extension of the model.Emitter class. It contains Vigilant
@@ -1220,10 +1205,14 @@ class Scanner(model.Emitter):
     setter also updates another value if needed.
     """
 
-    def __init__(self, name, role, parent:FIBSEM, hfw_nomag, channel, has_detector=False, **kwargs):
+    def __init__(self, name: str, role: str, parent:FIBSEM, hfw_nomag: float, channel: str, has_detector: bool=False, **kwargs):
         """
-        channel (str): name of the electron channel
-        has_detector (bool): True if a Detector is also controlled. In this case,
+        :param name (str): name of the Scanner
+        :param role (str): role of the Scanner
+        :param parent (FIBSEM): parent of the Scanner
+        :param hfw_nomag (float): horizontal field width at nominal magnification
+        :param channel (str): name of the electron channel
+        :param has_detector (bool): True if a Detector is also controlled. In this case,
           the .resolution, .scale and associated VAs will be provided too.
         """
         model.Emitter.__init__(self, name, role, parent=parent, **kwargs)
@@ -1459,7 +1448,6 @@ class Scanner(model.Emitter):
 
         """
         if blank is None:
-            # TODO Blanker should explicitly be set based on whether we are scanning or not.
             return None
 
         if blank:
@@ -1467,10 +1455,6 @@ class Scanner(model.Emitter):
         else:
             self.parent.unblank_beam(self.channel)
         return self.parent.beam_is_blanked(self.channel)
-
-    # def _setSpotSize(self, spotsize):
-    #     self.parent.set_spotsize(spotsize, channel=self.channel)
-    #     return self.parent.get_spotsize(self.channel)
 
     def _setBeamShift(self, beam_shift):
         self.parent.set_beam_shift(x=beam_shift[0], y=beam_shift[1], channel=self.channel)
@@ -1524,7 +1508,6 @@ class Scanner(model.Emitter):
         if self.blanker.value is None:
             self.parent.blank_beam(self.channel)
 
-# TODO: add support for patterning
 
 
 class Detector(model.Detector):
@@ -1629,8 +1612,6 @@ class Detector(model.Detector):
                         md[model.MD_BEAM_DWELL_TIME] = self._scanner.dwellTime.value
                     if hasattr(self._scanner, "rotation"):
                         md[model.MD_BEAM_SCAN_ROTATION] = self._scanner.rotation.value
-                    # if hasattr(self._scanner, "spotSize"):
-                    #     md[model.MD_BEAM_SPOT_DIAM] = self._scanner.spotSize.value
                     if hasattr(self._scanner, "accelVoltage"):
                         md[model.MD_BEAM_VOLTAGE] = self._scanner.accelVoltage.value
                     if hasattr(self._scanner, "beamCurrent"):
@@ -1640,9 +1621,6 @@ class Detector(model.Detector):
                     if hasattr(self._scanner, "horizontalFoV"):
                         md[model.MD_BEAM_FIELD_OF_VIEW] = self._scanner.horizontalFoV.value
 
-
-                    # TODO: this causes timeout?
-                    # stage_position = self.parent._stage.position.value
                     stage = model.getComponent(role="stage-bare")
                     stage_position = stage.position.value
                     md[model.MD_STAGE_POSITION_RAW] = stage_position
@@ -1658,13 +1636,12 @@ class Detector(model.Detector):
 
                     # Retrieve the image (scans image, blocks until the image is received)
                     image = self.parent.acquire_image(self._scanner.channel)
-                    # time.sleep(est_acq_time) # simulate acquisition time # TODO: simulator only
-                    # TODO: BUG: double scanning? why?
+                    # time.sleep(est_acq_time) # simulate acquisition time # simulator only
+                    # FIXME: BUG: double scanning? why?
                     md.update(self._metadata)
                     da = DataArray(image, md)
                     logging.debug("Notify dataflow with new image.")
                     self.data.notify(da)
-                    # break  # TODO: make this work properly, only acquires single images at the momenet
             logging.debug("Acquisition stopped")
         except TerminationRequested:
             logging.debug("Acquisition thread requested to terminate")
@@ -1748,7 +1725,6 @@ class Detector(model.Detector):
         raise TerminationRequested: if a terminate message was received
         """
         while True:
-            # return True # TODO: implement this properly
             msg = self._get_acq_msg(block=True)
             if msg == GEN_TERM:
                 raise TerminationRequested()
@@ -1932,17 +1908,17 @@ class Stage(model.Actuator):
         if "z" not in rng:
             rng["z"] = stage_info["range"]["z"]
         if "rx" not in rng:
-            rng["rx"] = stage_info["range"]["T"]
+            rng["rx"] = stage_info["range"]["t"]
         if "rz" not in rng:
-            rng["rz"] = stage_info["range"]["R"]
+            rng["rz"] = stage_info["range"]["r"]
 
         axes_def = {
             "x": model.Axis(unit=stage_info["unit"]["x"], range=rng["x"]),
             "y": model.Axis(unit=stage_info["unit"]["y"], range=rng["y"]),
             "z": model.Axis(unit=stage_info["unit"]["z"], range=rng["z"]),
-            "rx": model.Axis(unit=stage_info["unit"]["T"], range=rng["rx"]),
-            "rz": model.Axis(unit=stage_info["unit"]["R"], range=rng["rz"]),
-        } # TODO: make these axis and unit arguments consistent
+            "rx": model.Axis(unit=stage_info["unit"]["t"], range=rng["rx"]),
+            "rz": model.Axis(unit=stage_info["unit"]["r"], range=rng["rz"]),
+        }
 
         model.Actuator.__init__(self, name, role, parent=parent, axes=axes_def,
                                 **kwargs)
@@ -1989,8 +1965,6 @@ class Stage(model.Actuator):
         for an in ("rx", "rz"):
             rng = self.axes[an].range
             # To handle both rotations 0->2pi and inverted: -2pi -> 0.
-            # TODO: for inverted rotations of 2pi, it would probably be more
-            # user-friendly to still report 0->2pi as range.
             if util.almost_equal(rng[1] - rng[0], 2 * math.pi):
                 pos[an] = (pos[an] - rng[0]) % (2 * math.pi) + rng[0]
         return pos
@@ -2163,64 +2137,6 @@ class Focus(model.Actuator):
         # Refresh regularly the position
         self._pos_poll = util.RepeatingTimer(5, self._refreshPosition, "Focus position polling")
         self._pos_poll.start()
-
-    @isasync
-    def applyAutofocus(self, detector):
-        """
-        Wrapper for running the autofocus functionality asynchronously. It sets the state of autofocus,
-        the beam must be turned on and unblanked. Also a a reasonable manual focus is needed. When the image is too far
-        out of focus, an incorrect focus can be found using the autofocus functionality.
-        This call is non-blocking.
-
-        :param detector: (model.Detector)
-            Detector component that stores information about which channel to use for autofocusing.
-        :return: Future object
-        """
-        # Create ProgressiveFuture and update its state
-        est_start = time.time() + 0.1
-        f = ProgressiveFuture(start=est_start,
-                              end=est_start + 11)  # rough time estimation
-        f._autofocus_lock = threading.Lock()
-        f._must_stop = threading.Event()  # cancel of the current future requested
-        f.task_canceller = self._cancelAutoFocus
-        f._channel_name = detector._scanner.channel
-        return self._executor.submitf(f, self._applyAutofocus, f)
-
-    def _applyAutofocus(self, future):
-        """
-        Starts autofocussing and checks if the autofocussing process is finished for ProgressiveFuture.
-        :param future (Future): the future to start running.
-        """
-        pass
-        # channel_name = future._channel_name
-        # with future._autofocus_lock:
-        #     if future._must_stop.is_set():
-        #         raise CancelledError()
-        #     self.parent.set_autofocusing(channel_name, XT_RUN)
-        #     time.sleep(0.5)  # Wait for the autofocussing to start
-
-        # # Wait until the microscope is no longer autofocussing
-        # while self.parent.is_autofocusing(channel_name):
-        #     future._must_stop.wait(0.1)
-        #     if future._must_stop.is_set():
-        #         raise CancelledError()
-
-    def _cancelAutoFocus(self, future):
-        """
-        Cancels the autofocussing. Non-blocking.
-        :param future (Future): the future to stop.
-        :return (bool): True if it successfully cancelled (stopped) the move.
-        """
-        future._must_stop.set()  # tell the thread taking care of autofocussing it's over
-        return True
-        with future._autofocus_lock:
-            logging.debug("Cancelling autofocussing")
-            try:
-                self.parent.set_autofocusing(future._channel_name, XT_STOP)
-                return True
-            except OSError as error_msg:
-                logging.warning("Failed to cancel autofocus: %s", error_msg)
-                return False
 
     def _updatePosition(self):
         """
