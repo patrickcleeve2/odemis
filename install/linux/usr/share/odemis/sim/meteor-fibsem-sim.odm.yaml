@@ -17,7 +17,7 @@ METEOR-Sim: {
 }
 
 "FIBSEM": {
-  class: autoscript_client.FIBSEM,
+  class: autoscript_client.SEM,
   role: fibsem,
   init: {
     # address: "192.168.6.5",  # real
