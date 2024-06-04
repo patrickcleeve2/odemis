@@ -41,6 +41,7 @@ from odemis import util
 from odemis.model import (CancellableFuture, CancellableThreadPoolExecutor,
                           DataArray, HwError, ProgressiveFuture,
                           StringEnumerated, isasync)
+from odemis.driver.xt_client import Package, check_latest_package
 
 Pyro5.api.config.SERIALIZER = 'msgpack'
 msgpack_numpy.patch()
@@ -71,127 +72,6 @@ RESOLUTIONS = (
 # Xtadapter debian package installation directory which contains xtadapter's zip files
 XT_INSTALL_DIR = "/usr/share/xtadapter"
 
-
-class Package(object):
-    """
-    A class containing relevant information about a xtadapter package.
-
-    Attributes:
-        adapter: The type of the xtadapter.
-        bitness: The bitness 32bit or 64bit.
-        name: The filename of the package.
-        path: The absolute path of the package's zip file or exe file.
-        version: The version of the xtadapter.
-
-    """
-    def __init__(self):
-        self._adapter = None
-        self._bitness = None
-        self._name = None
-        self._path = None
-        self._version = None
-
-    @property
-    def adapter(self) -> str:
-        return self._adapter
-
-    @adapter.setter
-    def adapter(self, value: str) -> None:
-        self._adapter = value
-
-    @property
-    def bitness(self) -> str:
-        return self._bitness
-
-    @bitness.setter
-    def bitness(self, value: str) -> None:
-        self._bitness = value
-
-    @property
-    def name(self) -> str:
-        return self._name
-
-    @name.setter
-    def name(self, value: str) -> None:
-        self._name = value
-
-    @property
-    def path(self) -> str:
-        return self._path
-
-    @path.setter
-    def path(self, value: str) -> None:
-        self._path = value
-
-    @property
-    def version(self) -> str:
-        return self._version
-
-    @version.setter
-    def version(self, value: str) -> None:
-        self._version = value
-
-
-def check_latest_package(
-    directory: str, current_version: str, adapter: str, bitness: str, is_zip: bool
-) -> Optional[Package]:
-    """
-    Check if a latest xtadapter package is available.
-
-    :param directory: The directory to check if a latest xtadapter package is available.
-    :param current_version: The currently installed xtadapter version.
-    :param adapter: The adapter type e.g. xtadapter, fastem-xtadapter to be used for filtering.
-    :param bitness: The executable bitness i.e. 32bit or 64bit to be used for filtering.
-    :param is_zip: A flag stating if the package is a zip file, if not a zip file check if it is a folder.
-    :return: A class containing relevant information about the latest xtadapter package, if not found return None.
-
-    """
-    # Dict where key is the version of xtadapter package and value is information about the package
-    version_package = {}
-    # Package is named as f"delmic-{adapter}-{bitness}bit-v{version}"
-    # delmic-xtadapter-32bit-v1.11.2-dev
-    # delmic-xtadapter-32bit-v1.11.2.zip
-    # delmic-fastem-xtadapter-64bit-v1.11.2-dev
-    regex = r"delmic-([a-zA-Z-]+)-(\d+)bit-v([\d.]+)"
-    if is_zip:
-        regex += r".*.zip"
-    if os.path.isdir(directory):
-        for entity in os.listdir(directory):
-            result = re.search(regex, entity)
-            entity_path = os.path.join(directory, entity)
-            if result and (
-                entity.endswith(".zip") if is_zip
-                else os.path.isdir(entity_path) and len([entity for entity in os.listdir(entity_path) if entity.endswith(".exe")]) == 1
-            ):
-                package = Package()
-                package.adapter = result.group(1)
-                package.bitness = result.group(2) + "bit"
-                package.version = result.group(3)
-                package.name = entity
-                package.path = entity_path
-                # If not a zip file, assign the path of the executable
-                if not is_zip:
-                    for entity in os.listdir(package.path):
-                        if entity.endswith(".exe"):
-                            package.path = os.path.join(package.path, entity)
-                            break
-                # Filter using adapter type and bitness
-                if bitness == package.bitness and adapter == package.adapter:
-                    version_package[package.version] = package
-        # Check if any version is newer than the current one
-        versions = list(version_package)
-        if versions:
-            # Find the latest version
-            latest_version = max(versions, key=lambda s: [int(u) for u in s.split(".")])
-            if current_version < latest_version:
-                logging.info("The latest version is {}.\n".format(latest_version))
-                latest_package = version_package[latest_version]
-                if "-dev" in latest_package.name:
-                    logging.warning(
-                        "{} is a development version.\n".format(latest_package.name)
-                    )
-                return latest_package
-    return None
 
 
 # information on compatible versions
@@ -255,9 +135,6 @@ class FIBSEM(model.HwComponent):
         if not any(scanner_type in children for scanner_type in scanner_types):
             raise KeyError("FIBSEM was not given any scanner as child. "
                            "One of 'sem-scanner', 'fib-scanner' need to be included as child")
-
-        has_sem_detector = "sem-detector" in children
-        has_fib_detector = "fib-detector" in children
 
         if "sem-scanner" in children:
             kwargs = children["sem-scanner"]
@@ -496,7 +373,7 @@ class FIBSEM(model.HwComponent):
 
 ##### BEAM CONTROL
 
-    def set_scan_mode(self, mode: str, channel: str, value: Union[float, dict] = None) -> None:
+    def set_scan_mode(self, mode: str, channel: str, value: Optional[Union[float, dict]] = None) -> None:
         """
         Set the scan mode.
         :param mode: (str) Name of desired scan mode, one of: unknown, external, full_frame, spot, or line.
@@ -1592,6 +1469,7 @@ class Detector(model.Detector):
     def stop_generate(self):
         self.stop_acquisition()
         self._genmsg.put(GEN_STOP)
+        # TODO: add a cancel once scanning is asynchronous
 
     def _acquire(self):
         """
@@ -1604,7 +1482,11 @@ class Detector(model.Detector):
                 self._acq_wait_start()
                 logging.debug("Preparing acquisition")
                 while True:
-                    if self._acq_should_stop():
+                    logging.debug(f"Start acquiring an image")
+                    
+                    # HACK: from xt_client to prevent double scanning
+                    if self._acq_should_stop(timeout=0.2):
+                        logging.debug("Image acquisition should stop, exiting loop")
                         break
 
                     md = self._scanner._metadata.copy()
@@ -1633,6 +1515,11 @@ class Detector(model.Detector):
                     else:
                         # Acquisition time is unknown => assume it will be long
                         est_acq_time = 5 * 60  # 5 minutes
+
+                    # HACK: from xt_client to prevent double scanning
+                    if self._acq_should_stop(timeout=0.2):
+                        logging.debug("Image acquisition should stop, exiting loop")
+                        break
 
                     # Retrieve the image (scans image, blocks until the image is received)
                     image = self.parent.acquire_image(self._scanner.channel)
