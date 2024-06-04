@@ -128,7 +128,7 @@ class SEM(model.HwComponent):
         # Check if at least one of the required scanner types is instantiated
         scanner_types = ["sem-scanner", "fib-scanner"]  # All allowed scanners types
         if not any(scanner_type in children for scanner_type in scanner_types):
-            raise KeyError("FIBSEM was not given any scanner as child. "
+            raise KeyError("SEM was not given any scanner as child. "
                            "One of 'sem-scanner', 'fib-scanner' need to be included as child")
 
         if "sem-scanner" in children:
@@ -1077,11 +1077,11 @@ class Scanner(model.Emitter):
     setter also updates another value if needed.
     """
 
-    def __init__(self, name: str, role: str, parent:FIBSEM, hfw_nomag: float, channel: str, has_detector: bool=False, **kwargs):
+    def __init__(self, name: str, role: str, parent:SEM, hfw_nomag: float, channel: str, has_detector: bool=False, **kwargs):
         """
         :param name (str): name of the Scanner
         :param role (str): role of the Scanner
-        :param parent (FIBSEM): parent of the Scanner
+        :param parent (SEM): parent of the Scanner
         :param hfw_nomag (float): horizontal field width at nominal magnification
         :param channel (str): name of the electron channel
         :param has_detector (bool): True if a Detector is also controlled. In this case,
