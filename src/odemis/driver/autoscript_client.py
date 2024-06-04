@@ -266,7 +266,7 @@ class FIBSEM(model.HwComponent):
 
         if "fib-scanner" in children:
             kwargs = children["fib-scanner"]
-            self._fib_scanner = Scanner(parent=self, daemon=daemon, channel="ion", has_detector=has_fib_detector, **kwargs)
+            self._fib_scanner = Scanner(parent=self, daemon=daemon, channel="ion", has_detector=True, **kwargs)
             self.children.value.add(self._fib_scanner)
 
         # create the stage child, if requested
