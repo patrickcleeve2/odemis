@@ -261,7 +261,7 @@ class FIBSEM(model.HwComponent):
 
         if "sem-scanner" in children:
             kwargs = children["sem-scanner"]
-            self._scanner = Scanner(parent=self, daemon=daemon, channel="electron", has_detector=has_sem_detector, **kwargs)
+            self._scanner = Scanner(parent=self, daemon=daemon, channel="electron", has_detector=True, **kwargs)
             self.children.value.add(self._scanner)
 
         if "fib-scanner" in children:
