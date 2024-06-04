@@ -41,7 +41,7 @@ from odemis import util
 from odemis.model import (CancellableFuture, CancellableThreadPoolExecutor,
                           DataArray, HwError, ProgressiveFuture,
                           StringEnumerated, isasync)
-from odemis.driver.xt_client import Package, check_latest_package
+from odemis.driver.xt_client import check_latest_package, XT_INSTALL_DIR
 
 Pyro5.api.config.SERIALIZER = 'msgpack'
 msgpack_numpy.patch()
@@ -69,11 +69,6 @@ RESOLUTIONS = (
     (6144, 4096),
 )
 
-# Xtadapter debian package installation directory which contains xtadapter's zip files
-XT_INSTALL_DIR = "/usr/share/xtadapter"
-
-
-
 # information on compatible versions
 debug_connection_info = f"""PYRO 5: {pkg_resources.get_distribution('Pyro5').version},
 msgpack-numpy: {pkg_resources.get_distribution('msgpack-numpy').version},
@@ -88,24 +83,24 @@ or
 msgpack==1.0.3 msgpack-numpy==0.4.8
 """
 
-class FIBSEM(model.HwComponent):
+class SEM(model.HwComponent):
     """
     Driver to communicate with autoscript software on TFS microscopes. autoscript is the software TFS uses to control their microscopes.
     To use this driver the autoscript adapter developed by Delmic should be running on the TFS PC. Communication to the
-    Microscope server is done via Pyro5.
+    Microscope server is done via Pyro5. The component is a parent to the scanner, stage, focus, and detector components, and supports both SEM and FIB.
     """
 
     def __init__(self, name, role, children, address, port: str ='4242', daemon=None,
                  **kwargs):
         """
-        Parameters
-        ----------
-        address: str
-            server ip address for the microscope server (sim address is localhost)
-        port: str
-            server port of the Microscope server, default is '4242'
-        timeout: float
-            Time in seconds the client should wait for a response from the server.
+        :param name: str, Name of the microscope.
+        :param role: str, Role of the microscope.
+        :param children: dict, Dictionary with the children of the microscope.
+        :param address: str, server ip address for the microscope server (sim address is localhost)
+        :param port: str, server port of the Microscope server, default is '4242'
+        :param timeout: float, Time in seconds the client should wait for a response from the server.
+        :param daemon: bool, If True, the server will be a daemon thread.
+        :param kwargs: dict, Additional keyword arguments.
         """
 
         model.HwComponent.__init__(self, name, role, daemon=daemon, **kwargs)
@@ -1482,8 +1477,8 @@ class Detector(model.Detector):
                 self._acq_wait_start()
                 logging.debug("Preparing acquisition")
                 while True:
-                    logging.debug(f"Start acquiring an image")
-                    
+                    logging.debug("Start acquiring an image")
+
                     # HACK: from xt_client to prevent double scanning
                     if self._acq_should_stop(timeout=0.2):
                         logging.debug("Image acquisition should stop, exiting loop")
