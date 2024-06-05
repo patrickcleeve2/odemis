@@ -184,6 +184,7 @@ class FibsemTab(Tab):
         """Hide/Disable milling controls when fib view is not selected"""
         is_fib_view = issubclass(view.stream_classes, FIBStream)
         self.panel.fp_milling.Show(is_fib_view and MILLING_ENABLED)
+        # TODO: activate the corresponding channel on xtui
 
     @property
     def settingsbar_controller(self):

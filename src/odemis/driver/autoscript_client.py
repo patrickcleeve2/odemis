@@ -1188,7 +1188,7 @@ class Scanner(model.Emitter):
             # So it's read-only and updated when the scale is updated.
             resolution = self.parent.get_resolution(self.channel)
             res_choices = set(r for r in RESOLUTIONS)
-            self.resolution = model.VAEnumerated(resolution, res_choices, unit="px")
+            self.resolution = model.VAEnumerated(resolution, res_choices, unit="px" , setter=self._setResolution)
 
             # (float, float) as a ratio => how big is a pixel, compared to pixelSize
             # it basically works the same as binning, but can be float.
@@ -1260,9 +1260,14 @@ class Scanner(model.Emitter):
         # This would be slightly more flexible in case the XT lib supports other
         # resolutions than the hard-coded ones. For now we assume the hard-coded
         # ones are all the possibles ones.
-        self.parent.set_resolution(res, channel=self.channel)
-        self.resolution._set_value(res, force_write=True)
+        # self.parent.set_resolution(res, channel=self.channel)
+        self.resolution.value = res
 
+        return value
+    
+    def _setResolution(self, value: list) -> list:
+        self.parent.set_resolution(value, self.channel)
+        self._updateResolution() # to update scale -> pixelsize
         return value
 
     def _onScale(self, s):
@@ -1276,7 +1281,7 @@ class Scanner(model.Emitter):
         if resolution != self.resolution.value:
             scale = (self._shape[0] / resolution[0],) * 2
             self.scale._value = scale  # To not call the setter
-            self.resolution._set_value(resolution, force_write=True)
+            # self.resolution._set_value(resolution, force_write=True)
             self.scale.notify(scale)
 
     def _updatePixelSize(self):

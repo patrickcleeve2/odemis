@@ -939,7 +939,7 @@ class OverviewAcquisitionDialog(xrcfr_overview_acq):
         w = nx * self.fov[0] * (1 - self.overlap)
         h = ny * self.fov[1] * (1 - self.overlap)
 
-        pos = self._tab_data_model.main.stage.position.value
+        pos = self.stage.position.value
         # Note the area can accept LTRB or LBRT.
         area = self.clip_tiling_area_to_range(w, h, pos, self._tiling_rng)
         if area is None:
