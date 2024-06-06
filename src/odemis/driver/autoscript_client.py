@@ -1157,7 +1157,7 @@ class Scanner(model.Emitter):
             rotation_info["range"],
             unit=rotation_info["unit"],
             setter=self._setRotation)
-        
+
         # horizontal field of view
         fov_info = self.parent.field_of_view_info(self.channel)
         fov = self.parent.get_field_of_view(self.channel)
@@ -1188,7 +1188,7 @@ class Scanner(model.Emitter):
             pxs = (fov / self._shape[0],
                    fov / self._shape[0])
             # pixelsize is inferred indirectly via resolution and fov
-            self.pixelSize = model.VigilantAttribute(pxs, unit="m", readonly=True) 
+            self.pixelSize = model.VigilantAttribute(pxs, unit="m", readonly=True)
 
             # scanning resolution
             resolution = self.parent.get_resolution(self.channel)
@@ -1270,7 +1270,7 @@ class Scanner(model.Emitter):
         self.resolution.value = res
 
         return value
-    
+
     def _setResolution(self, value: list) -> list:
         self.parent.set_resolution(value, self.channel)
         self._updateResolution() # to update scale -> pixelsize
@@ -1406,7 +1406,7 @@ class Detector(model.Detector):
         :param parent (SEM): parent of the Detector
         :param channel (str): name of the acquistion channel (electron, ion)
         :param kwargs: additional keyword arguments
-        """        
+        """
         # The acquisition is based on a FSM that roughly looks like this:
         # Event\State |    Stopped    |   Acquiring    | Receiving data |
         #    START    | Ready for acq |        .       |       .        |
