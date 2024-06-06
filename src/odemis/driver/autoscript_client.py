@@ -19,7 +19,6 @@ http://www.gnu.org/licenses/.
 """
 import logging
 import math
-import os
 import queue
 import re
 import threading
@@ -57,6 +56,7 @@ GEN_TERM = "T"  # Stop the generator
 # value. Note that they are not all the same aspect ratio. "Legacy" resolutions
 # are ~8/7 while the new ones are 3/2. The "legacy" resolutions end up with a
 # larger vertical field of view.
+# TODO: non-standard resolutions are available in autoscript, so we should eventually enable them
 RESOLUTIONS = (
     (192, 128),
     (512, 442),
@@ -122,7 +122,7 @@ class SEM(model.HwComponent):
 
         # Transfer latest xtadapter package if available
         # The transferred package will be a zip file in the form of bytes
-        # self.check_and_transfer_latest_package()
+        # self.check_and_transfer_latest_package()  # TODO: enable this once the package is available
 
         # Create the scanner type child(ren)
         # Check if at least one of the required scanner types is instantiated
@@ -1077,7 +1077,7 @@ class Scanner(model.Emitter):
     setter also updates another value if needed.
     """
 
-    def __init__(self, name: str, role: str, parent:SEM, hfw_nomag: float, channel: str, has_detector: bool=False, **kwargs):
+    def __init__(self, name: str, role: str, parent: SEM, hfw_nomag: float, channel: str, has_detector: bool=False, **kwargs):
         """
         :param name (str): name of the Scanner
         :param role (str): role of the Scanner
@@ -1087,6 +1087,7 @@ class Scanner(model.Emitter):
         :param has_detector (bool): True if a Detector is also controlled. In this case,
           the .resolution, .scale and associated VAs will be provided too.
         """
+        self.parent: SEM  # for type hinting
         model.Emitter.__init__(self, name, role, parent=parent, **kwargs)
 
         self.channel = channel  # name of the channel used
@@ -1097,6 +1098,7 @@ class Scanner(model.Emitter):
         self._hfw_nomag = hfw_nomag
         self._has_detector = has_detector
 
+        # dwell time
         dwell_time_info = self.parent.dwell_time_info(self.channel)
         self.dwellTime = model.FloatContinuous(
             self.parent.get_dwell_time(self.channel),
@@ -1106,6 +1108,7 @@ class Scanner(model.Emitter):
         # when the range has changed, clip the current dwell time value to the new range
         self.dwellTime.clip_on_range = True
 
+        # beam voltage
         voltage_info = self.parent.high_voltage_info(self.channel)
         init_voltage = numpy.clip(self.parent.get_high_voltage(self.channel),
                             voltage_info['range'][0], voltage_info['range'][1])
@@ -1116,6 +1119,7 @@ class Scanner(model.Emitter):
             setter=self._setVoltage
         )
 
+        # beam current
         beam_current_info = self.parent.beam_current_info(self.channel)
         self.beamCurrent = model.FloatContinuous(
             value=self.parent.get_beam_current(self.channel),
@@ -1124,6 +1128,7 @@ class Scanner(model.Emitter):
             setter=self._setCurrent
         )
 
+        # beamshift
         beam_shift_info = self.parent.beam_shift_info(self.channel)
         range_x = beam_shift_info["range"]["x"]
         range_y = beam_shift_info["range"]["y"]
@@ -1134,6 +1139,7 @@ class Scanner(model.Emitter):
             unit=beam_shift_info["unit"],
             setter=self._setBeamShift)
 
+        # stigmator
         stigmator_info = self.parent.stigmator_info(self.channel)
         range_x = stigmator_info["range"]["x"]
         range_y = stigmator_info["range"]["y"]
@@ -1144,7 +1150,7 @@ class Scanner(model.Emitter):
             unit=stigmator_info["unit"],
             setter=self._setStigmator)
 
-
+        # scan rotation
         rotation_info = self.parent.scan_rotation_info(self.channel)
         self.rotation = model.FloatContinuous(
             self.parent.get_scan_rotation(self.channel),
@@ -1152,6 +1158,7 @@ class Scanner(model.Emitter):
             unit=rotation_info["unit"],
             setter=self._setRotation)
 
+        # horizontal field of view
         fov_info = self.parent.field_of_view_info(self.channel)
         fov = self.parent.get_field_of_view(self.channel)
         self.horizontalFoV = model.FloatContinuous(
@@ -1180,12 +1187,10 @@ class Scanner(model.Emitter):
             # == smallest size/ between two different ebeam positions
             pxs = (fov / self._shape[0],
                    fov / self._shape[0])
+            # pixelsize is inferred indirectly via resolution and fov
             self.pixelSize = model.VigilantAttribute(pxs, unit="m", readonly=True)
 
-            # .resolution is the number of pixels actually scanned. It's almost
-            # fixed to full frame, with the exceptions of the resolutions which
-            # are a different aspect ratio from the shape are "more than full frame".
-            # So it's read-only and updated when the scale is updated.
+            # scanning resolution
             resolution = self.parent.get_resolution(self.channel)
             res_choices = set(r for r in RESOLUTIONS)
             self.resolution = model.VAEnumerated(resolution, res_choices, unit="px" , setter=self._setResolution)
@@ -1201,6 +1206,12 @@ class Scanner(model.Emitter):
 
             # Just to make some code happy
             self.translation = model.TupleContinuous((0, 0), range=[(-512, -512), (512, 512)], unit="px", readonly=True)
+
+        # not yet implemented:
+        # beam on
+        # beam blank
+        # scanning mode
+        # spot size
 
         # Refresh regularly the values, from the hardware, starting from now
         self._updateSettings()
@@ -1256,15 +1267,15 @@ class Scanner(model.Emitter):
         res_x = int(round(self._shape[0] / value[0]))
         res = next(r for r in self.resolution.choices if r[0] == res_x)
 
-        # TODO: instead of setting both X and Y, only set X, and read back Y?
-        # This would be slightly more flexible in case the XT lib supports other
-        # resolutions than the hard-coded ones. For now we assume the hard-coded
-        # ones are all the possibles ones.
-        # self.parent.set_resolution(res, channel=self.channel)
         self.resolution.value = res
 
         return value
-    
+
+    def _setResolution(self, value: list) -> list:
+        self.parent.set_resolution(value, self.channel)
+        self._updateResolution() # to update scale -> pixelsize
+        return value
+
     def _setResolution(self, value: list) -> list:
         self.parent.set_resolution(value, self.channel)
         self._updateResolution() # to update scale -> pixelsize
@@ -1281,7 +1292,6 @@ class Scanner(model.Emitter):
         if resolution != self.resolution.value:
             scale = (self._shape[0] / resolution[0],) * 2
             self.scale._value = scale  # To not call the setter
-            # self.resolution._set_value(resolution, force_write=True)
             self.scale.notify(scale)
 
     def _updatePixelSize(self):
@@ -1394,14 +1404,21 @@ class Detector(model.Detector):
     is captured.
     """
 
-    def __init__(self, name, role, parent, channel: str, **kwargs):
+    def __init__(self, name: str, role: str, parent: SEM, channel: str, **kwargs):
+        """
+        :param name (str): name of the Detector
+        :param role (str): role of the Detector
+        :param parent (SEM): parent of the Detector
+        :param channel (str): name of the acquistion channel (electron, ion)
+        :param kwargs: additional keyword arguments
+        """
         # The acquisition is based on a FSM that roughly looks like this:
         # Event\State |    Stopped    |   Acquiring    | Receiving data |
         #    START    | Ready for acq |        .       |       .        |
         #    DATA     |       .       | Receiving data |       .        |
         #    STOP     |       .       |     Stopped    |    Stopped     |
         #    TERM     |     Final     |      Final     |     Final      |
-
+        self.parent: SEM  # for type hinting
         model.Detector.__init__(self, name, role, parent=parent, **kwargs)
         self._shape = (256,)  # Depth of the image
         self.data = SEMDataFlow(self)
