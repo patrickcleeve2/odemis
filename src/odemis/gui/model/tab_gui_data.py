@@ -376,17 +376,6 @@ class CryoFIBSEMGUIData(CryoGUIData):
         self.tool.choices = tools
         # VA for autofocus procedure mode
         self.autofocus_active = BooleanVA(False)
-        # the zstack minimum range below current focus position
-        self.zMin = model.FloatContinuous(
-            value=-10e-6, range=(-1000e-6, 0), unit="m")
-        # the zstack maximum range above current focus position
-        self.zMax = model.FloatContinuous(
-            value=10e-6, range=(0, 1000e-6), unit="m")
-        # the distance between two z-levels
-        self.zStep = model.FloatContinuous(
-            value=1e-6, range=(-100e-6, 100e-6), unit="m")
-        # for enabling/disabling z-stack acquisition
-        self.zStackActive = model.BooleanVA(value=False)
         # the streams to acquire among all streams in .streams
         self.acquisitionStreams = model.ListVA()
         # the static overview map streams, among all streams in .streams
@@ -398,7 +387,15 @@ class CryoFIBSEMGUIData(CryoGUIData):
             config.last_extension,
             config.fn_count))
         self.main.project_path.subscribe(self._on_project_path_change)
-        # Add zPos VA to control focus on acquired view
+     
+        # these are required for the acquisition controller
+        self.zMin = model.FloatContinuous(
+            value=-10e-6, range=(-1000e-6, 0), unit="m")
+        self.zMax = model.FloatContinuous(
+            value=10e-6, range=(0, 1000e-6), unit="m")
+        self.zStep = model.FloatContinuous(
+            value=1e-6, range=(-100e-6, 100e-6), unit="m")
+        self.zStackActive = model.BooleanVA(value=False)
         self.zPos = model.FloatContinuous(0, range=(0, 0), unit="m")
         self.zPos.clip_on_range = True
 
