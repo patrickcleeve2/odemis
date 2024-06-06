@@ -358,6 +358,8 @@ class CryoAcquiController(object):
             filename = self._add_feature_info_filename(filename)
         else:
             filename = self._create_fibsem_filename(filename)
+        
+        return filename
 
     def _export_data(self, data, thumb_nail):
         """
