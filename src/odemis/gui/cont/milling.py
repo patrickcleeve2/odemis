@@ -460,7 +460,7 @@ class MillingTaskController:
         )
         self.canvas.add_world_overlay(self.rectangles_overlay)
         self.rectangles_overlay.new_shape.subscribe(self.add_pattern)
-        self.rectangles_overlay.shapes.subscribe(self._on_shapes_update)
+        # self.rectangles_overlay.shapes.subscribe(self._on_shapes_update) # TODO: fix this with new_shape event
 
         self._pattern_sub_callback = {}
 

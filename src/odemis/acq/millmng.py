@@ -574,6 +574,14 @@ class MillingSettings2:
                 "mode": self.mode.value,
                 "channel": self.channel.value}
 
+    @staticmethod
+    def from_json(data: dict) -> "MillingSettings2":
+        return MillingSettings2(current=data["current"],
+                                voltage=data["voltage"],
+                                field_of_view=data["field_of_view"],
+                                mode=data.get("mode", "Serial"),
+                                channel=data.get("channel", "ion"))
+
     def __repr__(self):
         return f"{self.to_json()}"
 
@@ -599,6 +607,16 @@ class MillingPatternParameters:
                 "center_x": self.center.value[0],
                 "center_y": self.center.value[1],
                 "scan_direction": self.scan_direction.value}
+    
+    @staticmethod
+    def from_json(data: dict):
+        return MillingPatternParameters(width=data["width"], 
+                                        height=data["height"], 
+                                        depth=data["depth"], 
+                                        rotation=data.get("rotation", 0), 
+                                        center=(data.get("center_x", 0), data.get("center_y", 0)), 
+                                        scan_direction=data.get("scan_direction", "TopToBottom"), 
+                                        name=data.get("name", "Rectangle"))
 
     def __repr__(self):
         return f"{self.to_json()}"
@@ -613,7 +631,15 @@ class MillingTaskSettings:
         self.patterns = patterns
 
     def to_json(self) -> dict:
-        return {"milling": self.milling, "patterns": [pattern.to_json() for pattern in self.patterns]}
+        return {"milling": self.milling.to_json(), "patterns": [pattern.to_json() for pattern in self.patterns]}
+
+    @staticmethod
+    def from_json(data: dict):
+        return MillingTaskSettings(milling=MillingSettings2(**data["milling"]), 
+                                   patterns=[MillingPatternParameters.from_json(pattern) for pattern in data["patterns"]])
+
+    def __repr__(self):
+        return f"{self.to_json()}"
 
 class MillingTask:
     """This class represents a standard Milling Task."""
@@ -665,9 +691,12 @@ class MillingTask:
         milling_voltage = settings.milling.voltage.value
         milling_fov = settings.milling.field_of_view.value
         milling_channel = settings.milling.channel.value
+        milling_mode = settings.milling.mode.value
 
         # get initial imaging settings
         imaging_current = microscope.get_beam_current(milling_channel)
+        imaging_voltage = microscope.get_high_voltage(milling_channel)
+        imaging_fov = microscope.get_field_of_view(milling_channel)
 
         # error management
         ce = False
@@ -675,8 +704,11 @@ class MillingTask:
 
             # set the milling state
             microscope.clear_patterns()
+            microscope.set_default_patterning_beam_type(milling_channel)
+            microscope.set_high_voltage(milling_voltage, milling_channel)
             microscope.set_beam_current(milling_current, milling_channel)
             microscope.set_field_of_view(milling_fov, milling_channel)
+            microscope.set_patterning_mode(milling_mode)
 
             # draw milling patterns to screen
             for pattern in settings.patterns:
@@ -709,7 +741,9 @@ class MillingTask:
         finally:
             # restore imaging state
             microscope.set_beam_current(imaging_current, milling_channel)
-            microscope.set_active_view(2) # ion beam
+            microscope.set_high_voltage(imaging_voltage, milling_channel)
+            microscope.set_field_of_view(imaging_fov, milling_channel)
+            microscope.set_active_view(2) # ion beam TODO: use milling_channel
             microscope.clear_patterns()
 
             if ce:
