@@ -38,7 +38,8 @@ import odemis.acq.stream as acqstream
 import odemis.gui.conf.file as conffile
 from odemis import model
 from odemis.acq import millmng
-from odemis.acq.millmng import MillingPatternParameters, MillingSettings2
+from odemis.acq.milling.patterns import RectanglePatternParameters
+from odemis.acq.milling.tasks import MillingSettings2
 from odemis.acq.feature import FEATURE_ROUGH_MILLED, FEATURE_ACTIVE
 from odemis.gui import model as guimod
 from odemis.gui.comp.overlay.base import Vec
@@ -248,7 +249,7 @@ class MillingPatternController:
         shape: EditableShape,
         colour: str = "#ffff00",
     ):
-        self.parameters = MillingPatternParameters(
+        self.parameters = RectanglePatternParameters(
             width=10e-6, height=10e-6, depth=1e-6, name=name
         )
         self.shape = shape
@@ -460,7 +461,8 @@ class MillingTaskController:
         )
         self.canvas.add_world_overlay(self.rectangles_overlay)
         self.rectangles_overlay.new_shape.subscribe(self.add_pattern)
-        self.rectangles_overlay.shapes.subscribe(self._on_shapes_update) # TODO: fix this with new_shape event
+        self.rectangles_overlay.shapes.subscribe(self._on_shapes_update) 
+        # TODO: integrate with undo/redo functionality
 
         self._pattern_sub_callback = {}
 

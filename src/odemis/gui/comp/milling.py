@@ -2,14 +2,15 @@
 import logging
 import wx
 from odemis import gui, model
-from odemis.acq.millmng import MillingPatternParameters, MillingSettings2
+from odemis.acq.milling.patterns import RectanglePatternParameters
+from odemis.acq.milling.tasks import MillingSettings2
 from odemis.gui.comp.text import UnitFloatCtrl
 from odemis.gui.comp.combo import ComboBox
 
 class MillingPatternPanel(wx.Panel):
     """Panel for one Milling Pattern"""
 
-    def __init__(self, parent, pattern: MillingPatternParameters):
+    def __init__(self, parent, pattern: RectanglePatternParameters):
 
         name = pattern.name.value
 
