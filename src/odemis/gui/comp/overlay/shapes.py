@@ -152,20 +152,20 @@ class ShapesOverlay(WorldOverlay):
     def clear(self):
         """Remove all shapes and update canvas."""
         self._activate_shapes(False)
-        self._shapes.clear()
+        self.shapes.value.clear()
 
     def remove_shape(self, shape):
         """Remove the shape and update canvas."""
-        if shape in self._shapes:
+        if shape in self.shapes.value:
             shape.active.value = False
-            self._shapes.remove(shape)
+            self.shapes.value.remove(shape)
             self.cnvs.remove_world_overlay(shape)
             self.cnvs.request_drawing_update()
 
     def add_shape(self, shape):
         """Add the shape and update canvas."""
-        if shape not in self._shapes:
-            self._shapes.append(shape)
+        if shape not in self.shapes.value:
+            self.shapes.value.append(shape)
             self.cnvs.add_world_overlay(shape)
             self.new_shape._set_value(shape, force_write=True)
             self.cnvs.request_drawing_update()
@@ -184,7 +184,7 @@ class ShapesOverlay(WorldOverlay):
 
     def _activate_shapes(self, flag=True):
         """Activate or de-activate the shapes."""
-        for shape in self._shapes:
+        for shape in self.shapes.value:
             shape.active.value = flag
 
     def _on_tool(self, selected_tool):
@@ -203,9 +203,9 @@ class ShapesOverlay(WorldOverlay):
         :return: the most appropriate shape.
             If no shape is found, it returns None.
         """
-        if self._shapes:
+        if self.shapes.value:
             pos = self.cnvs.view_to_phys(evt.Position, self.cnvs.get_half_buffer_size())
-            for shape in self._shapes[::-1]:
+            for shape in self.shapes.value[::-1]:
                 if shape.is_point_in_shape(pos):
                     return shape
         return None
@@ -213,7 +213,7 @@ class ShapesOverlay(WorldOverlay):
     def _create_new_shape(self):
         """Create a new shape."""
         shape = self.shape_cls(self.cnvs)
-        self._shapes.append(shape)
+        self.shapes.value.append(shape)
         self.cnvs.add_world_overlay(shape)
         self.new_shape._set_value(shape, force_write=True)
         return shape
@@ -222,7 +222,7 @@ class ShapesOverlay(WorldOverlay):
         """Copy a selected shape to a view position as the center."""
         # Copy the shape
         shape = self._shape_to_copy.copy()
-        self._shapes.append(shape)
+        self.shapes.value.append(shape)
         self.cnvs.add_world_overlay(shape)
         self.new_shape._set_value(shape, force_write=True)
         # Move the copied shape to a view position
@@ -369,7 +369,7 @@ class ShapesOverlay(WorldOverlay):
 
     def draw(self, ctx, shift=(0, 0), scale=1.0, dash=False):
         """Draw all the shapes."""
-        for shape in self._shapes:
+        for shape in self.shapes.value:
             shape.draw(
                 ctx,
                 shift,
