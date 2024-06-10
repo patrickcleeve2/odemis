@@ -135,7 +135,8 @@ class ShapesOverlay(WorldOverlay):
         self._is_new_shape = False
         self._selected_shape = None
         self._shape_to_copy = None
-        self._shapes = []
+        self.shapes = model.ListVA()
+
         # History of shape's states
         # Stack is a Tuple[EditableShape, Dict[IntEnum, Any], bool] of the shape, its state and
         # a flag stating if it was newly created
@@ -143,6 +144,7 @@ class ShapesOverlay(WorldOverlay):
         self._redo_stack: Deque[ShapeState] = deque(maxlen=UNDO_STACK_DEPTH)
         self._undo_action = False
         self._redo_action = False
+
         if tool and tool_va:
             self.tool = tool
             tool_va.subscribe(self._on_tool, init=True)
