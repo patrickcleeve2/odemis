@@ -56,6 +56,7 @@ from odemis.gui.util.widgets import (ProgressiveFutureConnector,
                                      VigilantAttributeConnector)
 from odemis.util import rect_intersect, units
 from odemis.util.filename import create_filename, guess_pattern, update_counter
+from odemis.acq.stitching import get_tiled_areas
 
 
 class AcquisitionDialog(xrcfr_acq):
@@ -788,9 +789,20 @@ class OverviewAcquisitionDialog(xrcfr_overview_acq):
         try:
             if self.fibsem_mode:
                 self.stage = self._main_data_model.stage_bare
+                self.focuser = self._main_data_model.ebeam_focus
+                self.detector = self._main_data_model.sed
+                self.settings_obs = None
                 range_md = model.MD_SEM_IMAGING_RANGE
+
+                # In FIBSEM mode, we don't have autofocus because of how the overview code currently works
+                self.autofocus_chkbox.Hide()
+                self.autofocus_roi_ckbox.value = False
+
             else:
                 self.stage = self._main_data_model.stage
+                self.focuser = self._main_data_model.focus
+                self.detector = self._main_data_model.ccd
+                self.settings_obs = self._main_data_model.settings_obs
                 range_md = model.MD_POS_ACTIVE_RANGE
 
             # Use the stage range, which can be overridden by the MD_POS_ACTIVE_RANGE.
@@ -891,6 +903,22 @@ class OverviewAcquisitionDialog(xrcfr_overview_acq):
         return: the bounding boxes (xmin, ymin, xmax, ymax in physical coordinates)
         of all areas to acquire.
         """
+
+        areas = get_tiled_areas(
+            pos=self.stage.position.value,
+            streams=self.get_acq_streams(),
+            tiles_nx=self.tiles_nx.value,
+            tiles_ny=self.tiles_ny.value,
+            overlap=self.overlap,
+            tiling_rng=self._tiling_rng,
+            selected_grids=self._selected_grids,
+            sample_centers=self._main_data_model.sample_centers,
+            rel_bbox=self._main_data_model.sample_rel_bbox,
+            whole_grid=self.whole_grid_chkbox.Value,
+        )
+
+        return areas
+
         whole_grid = self.whole_grid_chkbox.Value
         if not whole_grid:
             area = self._compute_area_size()
@@ -1066,8 +1094,8 @@ class OverviewAcquisitionDialog(xrcfr_overview_acq):
                 acq_time = stitching.estimateOverviewTime(streams,
                                                           self.stage,
                                                           areas,
-                                                          self._main_data_model.focus,
-                                                          self._main_data_model.ccd,
+                                                          focus=self.focuser,
+                                                          detector=self.detector,
                                                           overlap=self.overlap,
                                                           settings_obs=self._main_data_model.settings_obs,
                                                           weaver=WEAVER_MEAN,
@@ -1263,16 +1291,16 @@ class OverviewAcquisitionDialog(xrcfr_overview_acq):
             logging.info("Acquisition tiles logged at %s", self.filename_tiles)
             os.makedirs(os.path.dirname(self.filename_tiles), exist_ok=True)
 
-        if self.autofocus_roi_ckbox.value:
+        if True: #self.autofocus_roi_ckbox.value:
             # acquireOverview() needs relative zlevels, as they will be used relative to the focus points found
             zlevels = self._get_zstack_levels(rel=True)
             self.acq_future = acquireOverview(acq_streams,
                                               self.stage,
                                               areas,
-                                              self._main_data_model.focus,
-                                              self._main_data_model.ccd,
+                                              focus=self.focuser,
+                                              detector=self.detector,
                                               overlap=self.overlap,
-                                              settings_obs=self._main_data_model.settings_obs,
+                                              settings_obs=self.settings_obs,
                                               log_path=self.filename_tiles,
                                               weaver=WEAVER_MEAN,
                                               registrar=REGISTER_IDENTITY,
