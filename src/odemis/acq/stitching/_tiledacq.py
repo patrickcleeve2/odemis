@@ -968,7 +968,7 @@ def estimateOverviewTime(*args, **kwargs):
 
 
 def acquireOverview(streams, stage, areas, focus, detector, overlap=0.2, settings_obs=None, log_path=None, zlevels=None,
-                    registrar=REGISTER_GLOBAL_SHIFT, weaver=WEAVER_MEAN, focusing_method=FocusingMethod.NONE):
+                    registrar=REGISTER_GLOBAL_SHIFT, weaver=WEAVER_MEAN, focusing_method=FocusingMethod.NONE, use_autofocus: bool = False):
     """
     Start autofocus and tiled acquisition tasks for each area in the list of area which is
     given by the input argument areas.
@@ -988,6 +988,7 @@ def acquireOverview(streams, stage, areas, focus, detector, overlap=0.2, setting
     :param registrar: (str) the type of registration to use
     :param weaver: (str) the type of weaver to use
     :param focusing_method: (str) the focusing method to use
+    :param use_autofocus: (bool) whether to use autofocus or not
     :return: (ProgressiveFuture) an object that represents the task, allow to
         know how much time before it is over and to cancel it. It also permits
         to receive the result of the task, which is a list of model.DataArray:
@@ -997,7 +998,7 @@ def acquireOverview(streams, stage, areas, focus, detector, overlap=0.2, setting
     future = model.ProgressiveFuture()
     task = AcquireOverviewTask(streams, stage, areas, focus, detector, future, overlap, settings_obs,
                                log_path, zlevels,
-                               registrar, weaver, focusing_method)
+                               registrar, weaver, focusing_method, use_autofocus)
     future.task_canceller = task.cancel  # let the future cancel the task
 
     future.set_progress(end=task.estimate_time() + time.time())
@@ -1014,7 +1015,7 @@ class AcquireOverviewTask(object):
 
     def __init__(self, streams, stage, areas, focus, detector, future=None, overlap=0.2, settings_obs=None, log_path=None,
                  zlevels=None,
-                 registrar=REGISTER_GLOBAL_SHIFT, weaver=WEAVER_MEAN, focusing_method=FocusingMethod.NONE):
+                 registrar=REGISTER_GLOBAL_SHIFT, weaver=WEAVER_MEAN, focusing_method=FocusingMethod.NONE, use_autofocus: bool = False):
         # site and feature means the same
         self._stage = stage
         self._future = future
@@ -1037,7 +1038,7 @@ class AcquireOverviewTask(object):
 
         self.conf_level = 0.8
         self.focusing_method = focusing_method
-        self.autofocus: bool = True if focusing_method != FocusingMethod.NONE else False
+        self._use_autofocus: bool = use_autofocus
         self._focus_points = []  # list of focus points per each area in areas
         self._total_nb_focus_points = 0
         for area in areas:
@@ -1078,8 +1079,8 @@ class AcquireOverviewTask(object):
             acquisition_time = actual_time_per_roi * remaining_rois
         else:
             autofocus_time = 0
-            print(f"autofocus: {self.autofocus}")
-            if self.autofocus:
+            print(f"autofocus: {self._use_autofocus}")
+            if self._use_autofocus:
                 autofocus_time = estimate_autofocus_in_roi_time(self._total_nb_focus_points, self._det)
             tiled_time = 0
             for area in self.areas:
@@ -1119,7 +1120,7 @@ class AcquireOverviewTask(object):
                 self._future.set_end_time(time.time() + remaining_t)
                 print(f"remaining time: {remaining_t}")
                 focus_points = None
-                if self.autofocus:
+                if self._use_autofocus:
                     # cancel the sub future
                     with self._future._task_lock:
                         if self._future._task_state == CANCELLED:

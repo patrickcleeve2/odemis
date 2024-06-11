@@ -56,7 +56,7 @@ from odemis.gui.util.widgets import (ProgressiveFutureConnector,
                                      VigilantAttributeConnector)
 from odemis.util import rect_intersect, units
 from odemis.util.filename import create_filename, guess_pattern, update_counter
-from odemis.acq.stitching import get_tiled_areas
+from odemis.acq.stitching import get_tiled_areas, get_zstack_levels
 
 
 class AcquisitionDialog(xrcfr_acq):
@@ -709,7 +709,7 @@ class OverviewAcquisitionDialog(xrcfr_overview_acq):
         # [] autofocus (if not sample centers)
 
         if self._main_data_model.sample_centers:
-            self.autofocus_chkbox.Hide()
+            self.autofocus_chkbox.Show()
             self.autofocus_roi_ckbox.value = True
 
             self.whole_grid_chkbox.Value = True
@@ -1097,7 +1097,7 @@ class OverviewAcquisitionDialog(xrcfr_overview_acq):
                                                           focus=self.focuser,
                                                           detector=self.detector,
                                                           overlap=self.overlap,
-                                                          settings_obs=self._main_data_model.settings_obs,
+                                                          settings_obs=self.settings_obs,
                                                           weaver=WEAVER_MEAN,
                                                           registrar=REGISTER_IDENTITY,
                                                           zlevels=zlevels,
@@ -1212,6 +1212,8 @@ class OverviewAcquisitionDialog(xrcfr_overview_acq):
         :returns:
             (list(float) or None) zstack levels for zstack acquisition. None if only one zstep is requested.
         """
+        return get_zstack_levels(zsteps=self.zsteps.value, zstep_size=self.zstep_size.value, rel=rel)
+       
         zsteps = self.zsteps.value
         if zsteps == 1:
             return None
@@ -1291,34 +1293,26 @@ class OverviewAcquisitionDialog(xrcfr_overview_acq):
             logging.info("Acquisition tiles logged at %s", self.filename_tiles)
             os.makedirs(os.path.dirname(self.filename_tiles), exist_ok=True)
 
-        if True: #self.autofocus_roi_ckbox.value:
-            # acquireOverview() needs relative zlevels, as they will be used relative to the focus points found
-            zlevels = self._get_zstack_levels(rel=True)
-            self.acq_future = acquireOverview(acq_streams,
-                                              self.stage,
-                                              areas,
-                                              focus=self.focuser,
-                                              detector=self.detector,
-                                              overlap=self.overlap,
-                                              settings_obs=self.settings_obs,
-                                              log_path=self.filename_tiles,
-                                              weaver=WEAVER_MEAN,
-                                              registrar=REGISTER_IDENTITY,
-                                              zlevels=zlevels,
-                                              focusing_method=focus_mtd)
+        use_autofocus = self.autofocus_roi_ckbox.value
+        
+        # autofocus needs relative zlevels, as they will be used relative to the focus points found
+        zlevels = self._get_zstack_levels(rel=use_autofocus)
 
-        else:
-            # If there are several areas, the autofocus should be automatically selected
-            # => no autofocus only works with a single area
-            zlevels = self._get_zstack_levels(rel=False)
-            self.acq_future = stitching.acquireTiledArea(acq_streams, self.stage, area=areas[0],
-                                                         overlap=self.overlap,
-                                                         settings_obs=self._main_data_model.settings_obs,
-                                                         log_path=self.filename_tiles,
-                                                         weaver=WEAVER_MEAN,
-                                                         registrar=REGISTER_IDENTITY,
-                                                         zlevels=zlevels,
-                                                         focusing_method=focus_mtd)
+        self.acq_future = acquireOverview(
+            streams=acq_streams,
+            stage=self.stage,
+            areas=areas,
+            focus=self.focuser,
+            detector=self.detector,
+            overlap=self.overlap,
+            settings_obs=self.settings_obs,
+            log_path=self.filename_tiles,
+            weaver=WEAVER_MEAN,
+            registrar=REGISTER_IDENTITY,
+            zlevels=zlevels,
+            focusing_method=focus_mtd,
+            use_autofocus=use_autofocus,
+        )
 
         self._acq_future_connector = ProgressiveFutureConnector(self.acq_future,
                                                                 self.gauge_acq,
