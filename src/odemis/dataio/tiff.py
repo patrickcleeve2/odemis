@@ -85,12 +85,14 @@ TIFFTAG_TFS_MD_XML = 34683
 TIFFTAG_ZEISS_MD_1 = 34118
 TIFFTAG_ZEISS_MD_2 = 34119
 TIFFTAG_TESCAN_MD = 50431
+TIFFTAG_IMAGEJ_MD = 50839
 tag_tfs = T.TIFFFieldInfo(TIFFTAG_TFS_MD, -1, -1, T.TIFFDataType.TIFF_ASCII, T.FIELD_CUSTOM, True, False, b"tfs_md")
 tag_tfs_xml = T.TIFFFieldInfo(TIFFTAG_TFS_MD_XML, -1, -1, T.TIFFDataType.TIFF_ASCII, T.FIELD_CUSTOM, True, False, b"tfs_md_XML")
 tag_zeiss_md_1 = T.TIFFFieldInfo(TIFFTAG_ZEISS_MD_1, -3, -3, T.TIFFDataType.TIFF_BYTE, T.FIELD_CUSTOM, False, True, b"zeiss_md_1")
 tag_zeiss_md_2 = T.TIFFFieldInfo(TIFFTAG_ZEISS_MD_2, -3, -3, T.TIFFDataType.TIFF_BYTE, T.FIELD_CUSTOM, False, True, b"zeiss_md_2")
 tag_tescan = T.TIFFFieldInfo(TIFFTAG_TESCAN_MD, -3, -3, T.TIFFDataType.TIFF_BYTE, T.FIELD_CUSTOM, False, True, b"tescan_md")
-ext = T.add_tags([tag_tfs, tag_tfs_xml, tag_zeiss_md_1, tag_zeiss_md_2, tag_tescan]) # Note: if you ever dereference ext, libtiff will crash
+tag_imagej_md = T.TIFFFieldInfo(TIFFTAG_IMAGEJ_MD, -3, -3, T.TIFFDataType.TIFF_BYTE, T.FIELD_CUSTOM, False, True, b"imagej_md")
+ext = T.add_tags([tag_tfs, tag_tfs_xml, tag_zeiss_md_1, tag_zeiss_md_2, tag_tescan, tag_imagej_md]) # Note: if you ever dereference ext, libtiff will crash
 
 # Hack: they are officially defined as "ASCII" in the file, but they are not
 # null terminated. So read them "raw", clip to the count, and then convert from bytes to the right string format.
@@ -102,6 +104,9 @@ T.tifftags[TIFFTAG_ZEISS_MD_2] = ((T.ctypes.c_uint32, T.ctypes.c_char), lambda d
 # pylibtiff doesn't support reading variable length tags via add_tags(),
 # So we have to explicitly change the format to indicate it'll be variable (and GetField will work fine)
 T.tifftags[TIFFTAG_TESCAN_MD] = ((T.ctypes.c_uint32, T.ctypes.c_char), lambda d: d[1][:d[0]])
+
+# imagej metadata tag
+T.tifftags[TIFFTAG_IMAGEJ_MD] = ((T.ctypes.c_uint32, T.ctypes.c_char), lambda d: d[1][:d[0]])
 
 # suppress warnings and errors from libtiff (written to stderr by default)
 # T.suppress_errors() # deliberately commented out
@@ -287,6 +292,26 @@ def _readTiffTag(tfile):
             md.update(_convert_openfibsem_to_odemis_metadata(omd))
         except Exception as e:
             logging.debug(f"Failed to parse OpenFIBSEM metadata: {e}")
+
+    # extended imagej metadata
+    imagej_extended_md = tfile.GetField(TIFFTAG_IMAGEJ_MD)
+    if imagej_extended_md is not None:
+        try:
+            ij_ext_md = imagej_extended_md[8:].decode("latin1")
+            md.update(convert_imagej_extended_to_odemis_metadata(ij_ext_md))
+        except Exception as e:
+            print(f"Failed to parse ImageJ metadata: {e}")
+            logging.debug(f"Failed to parse ImageJ metadata: {e}")
+
+    # TODO: make sure this doesn't have side effects
+    # parse imagej metadata tag
+    image_desc = tfile.GetField(T.TIFFTAG_IMAGEDESCRIPTION)
+    if image_desc is not None:
+        try:
+            imagej_desc = image_desc.decode("latin1")
+            md.update(_convert_imagej_to_odemis_metadata(imagej_desc, md[model.MD_PIXEL_SIZE]))
+        except Exception as e:
+            logging.debug(f"Failed to parse ImageJ metadata: {e}")
 
     return md
 
@@ -2343,11 +2368,29 @@ class AcquisitionDataTIFF(AcquisitionData):
         # iterates all the directories of the TIFF file
         for dir_index in self._iterDirectories(tfile):
             das, is_thumb = self._createDataArrayShadows(tfile, dir_index, lock)
+            # check if the first page has extended ImageJ metadata
+            if dir_index == 0:
+                has_extended_imagej = das.metadata.get("HasImageJExtended", False)
             if is_thumb:
                 data.append(None)
                 thumbnails.append(das)
             else:
                 data.append(das)
+
+        # updating each DataArrayShadow with the extended ImageJ metadata, as it is only stored in the first page...
+        if data and has_extended_imagej:
+            logging.debug(f"This stack has extended ImageJ metadata: {has_extended_imagej}")
+            md = data[0].metadata.copy()
+            for d in data[1:]:
+                d.metadata.update(
+                    {
+                        model.MD_DESCRIPTION: md[model.MD_DESCRIPTION],
+                        model.MD_ACQ_TYPE: md[model.MD_ACQ_TYPE],
+                        model.MD_IN_WL: md[model.MD_IN_WL],
+                        model.MD_OUT_WL: md[model.MD_OUT_WL],
+                        model.MD_POS: md[model.MD_POS],
+                    }
+                )
 
         return data, thumbnails
 
@@ -3282,5 +3325,83 @@ def _convert_openfibsem_to_odemis_metadata(metadata: str) -> dict:
     # so we raise an error so external metadata is not updated
     if not md:
         raise ValueError("ImageDescription tag contained data, but no OpenFIBSEM metadata found... falling back to previous metadata...")
+
+    return md
+
+unit_to_scale = {
+    "nanometer": 1e-9,
+    "micron": 1e-6,
+    "millimeter": 1e-3,
+    "meter": 1,
+    "centimeter": 1e-2,
+}
+def _convert_imagej_to_odemis_metadata(imagej_desc: str, pixel_size: tuple = None) -> dict:
+    """parse ImageJ metadata and convert to odemis metadata format
+    :param imagej_desc: ImageJ metadata description
+    :param pixel_size: pixel size in meters (from tiff metadata if available)
+    :return: (dict) metadata as dictionary
+    """
+    imagej_md = {}
+    if "ImageJ" in imagej_desc:
+        cfg = configparser.ConfigParser()
+        cfg.read_string("[metadata]\n" + imagej_desc)
+
+        # pixel scaling
+        unit = cfg.get("metadata", "unit")
+        scale = unit_to_scale.get(unit, 1e6)
+        if pixel_size:
+            try:
+                imagej_md[model.MD_PIXEL_SIZE] = (pixel_size[0] * scale, pixel_size[1] * scale) # TODO: handle 3d?
+            except Exception as e:
+                logging.warning(f"Failed to parse ImageJ metadata: {model.MD_PIXEL_SIZE} - {e}")
+
+    return imagej_md
+
+
+def convert_imagej_extended_to_odemis_metadata(ij_md: str):
+    """Convert ImageJ Extended metadata to odemis metadata format (Leica Thunder)"""
+    md = {}
+
+    # byte stuff
+    ij_md = ij_md.replace("\x00", "")
+    ij_md = ij_md[24:]
+
+    rk_map = {"StageX": "Image|ATLConfocalSettingDefinition|StagePosX".lower(),
+            "StageY": "Image|ATLConfocalSettingDefinition|StagePosY".lower(),
+            "LaserWavelength": "Image|ATLConfocalSettingDefinition|Laser|Wavelength".lower(),
+            "TargetWaveLengthBegin": "Image|ATLConfocalSettingDefinition|MultiBand|TargetWaveLengthBegin".lower(),
+            "TargetWaveLengthEnd": "Image|ATLConfocalSettingDefinition|MultiBand|TargetWaveLengthEnd".lower(),
+            "Filename": "Location".lower(),
+    }
+    try:
+        cfg = configparser.ConfigParser()
+        cfg.read_string("[metadata]" + ij_md)
+
+    except Exception as e:
+        logging.debug(f"Failed to parse ImageJ Extended metadata: {e}", exc_info=True)
+
+    # filename? acq type? need to read extra md
+    md[model.MD_DESCRIPTION] = os.path.basename(cfg.get("metadata", rk_map["Filename"]))
+    md[model.MD_ACQ_TYPE] = model.MD_AT_FLUO
+
+    lw = cfg.get("metadata", rk_map["LaserWavelength"])
+    laser_wavelength = float(lw) * 1e-9
+    wl_out1 = cfg.get("metadata", rk_map["TargetWaveLengthBegin"])
+    wl_out2 = cfg.get("metadata", rk_map["TargetWaveLengthEnd"])
+    stage_x = cfg.get("metadata", rk_map["StageX"])
+    stage_y = cfg.get("metadata", rk_map["StageY"])
+
+    md[model.MD_IN_WL] = (laser_wavelength, laser_wavelength)
+    md[model.MD_OUT_WL] = (float(wl_out1) * 1e-9, float(wl_out2) * 1e-9)
+    md[model.MD_POS] = (float(stage_x), float(stage_y))
+
+    md["HasImageJExtended"] = True
+
+    # note
+    # this is a merged channel image, so the metadata is only stored in the first tiff page
+    # this means we have to inferr / assume the metadata for the other channels will be the same.
+    # questions:
+    # do you have the raw .lif? it might contain each channel metadata
+    # is it possible to export the individual channels?
 
     return md
