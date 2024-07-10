@@ -198,11 +198,6 @@ received).
 
         Registers a function (callable) which will receive new version of the data every time it is available with the metadata. The format of the callback is callback(dataflow, dataarray), with dataflow the dataflow which calls it and dataarray the new data coming (which should not be modified, as other subscribers might receive the same object). It returns nothing.
 
-    .. TODO: optionally a “recommended update rate” which indicates how often we want data update maximum?
-
-    .. TODO: optionally indicate whether the subscriber wants all the data, or only 
-        cares about the last one generated.
-
     .. py:method:: unsubscribe(callback)
 
         Unregister a given callback. Can be called from the callback itself.
@@ -223,9 +218,12 @@ received).
         If None is passed, no synchronization is taking place.
         See :py:class:`Event` for more information on synchronization.
 
-    .. py:attribute:: parent
+    .. py:attribute:: max_discard
 
-        The component which owns this data-flow.
+        (int) number of DataArray (or "frame") which can be discarded in a row if it comes
+        in too fast to be handled by the subscribers.
+        Setting it to 0 indicates that no data should be discarded (unless there
+        is a huge memory usage).
 
 
     The rest of the methods are private and should only be used by the DataFlow 
@@ -273,6 +271,11 @@ Each listener has a separate queue, which ensures it will never miss the fact an
     .. py:method:: notify()
 
         Indicates an event has just occurred. Only to be done by the owner of the event.
+
+    .. py:attribute:: affects
+
+        *(VA, list of str)* Names of the components that are receiving the event
+        physically. This is mainly intended to be used for hardware triggers.
 
 
 Future
@@ -425,8 +428,7 @@ Typically they are used to configure the device to a specific mode (e.g., change
         valid but the rules are not to be precisely known by the client (e.g.,
         the exposure time of a CCD component, in which case the setter will 
         accept any positive value but return the actual value set).
-    :param str unit: the unit of the value. The convention is to set *None* when
-        unknown or meaningless and "" if it is a unit-less ratio.
+    :param str unit: the unit of the value.
 
     .. py:attribute:: value
 
@@ -442,7 +444,7 @@ Typically they are used to configure the device to a specific mode (e.g., change
         
         Note: if the VA is readonly, it is still possible for the owner to change
         the value. This can be done either by calling ._set_value(val, force_write=True),
-        or by directly changing ._value (but in which case netheir the setter,
+        or by directly changing ._value (but in which case neither the setter,
         nor notify() are called).
 
     .. py:method:: subscribe(callback)
@@ -470,6 +472,8 @@ Typically they are used to configure the device to a specific mode (e.g., change
     
         *(ro, str)*: The unit of the value. The convention is to express measured
         quantities whenever possible in SI units (e.g., m, rad, C, s).
+        If it is a unit-less ratio, it is set to "", and if the unit is unknown or
+        meaningless it is to set *None*.
      
     The following method can be used by the VigilantAttribute implementations
 

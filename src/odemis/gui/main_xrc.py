@@ -221,6 +221,7 @@ class xrcfr_main(wx.Frame):
         self.menu_item_cross = self.GetMenuBar().FindItemById(xrc.XRCID("menu_item_cross"))
         self.menu_item_interpolation = self.GetMenuBar().FindItemById(xrc.XRCID("menu_item_interpolation"))
         self.menu_item_rawpixel = self.GetMenuBar().FindItemById(xrc.XRCID("menu_item_rawpixel"))
+        self.menu_item_show_correlation = self.GetMenuBar().FindItemById(xrc.XRCID("menu_item_show_correlation"))
         self.menu_item_manual = self.GetMenuBar().FindItemById(xrc.XRCID("menu_item_manual"))
         self.menu_item_devmanual = self.GetMenuBar().FindItemById(xrc.XRCID("menu_item_devmanual"))
         self.menu_item_inspect = self.GetMenuBar().FindItemById(xrc.XRCID("menu_item_inspect"))
@@ -370,6 +371,7 @@ class xrcpnl_tab_cryosecom_chamber(wx.Panel):
         self.pnl_project = xrc.XRCCTRL(self, "pnl_project")
         self.txt_projectpath = xrc.XRCCTRL(self, "txt_projectpath")
         self.btn_change_folder = xrc.XRCCTRL(self, "btn_change_folder")
+        self.btn_load_project = xrc.XRCCTRL(self, "btn_load_project")
         self.pnl_switch_buttons = xrc.XRCCTRL(self, "pnl_switch_buttons")
         self.btn_switch_sem_imaging = xrc.XRCCTRL(self, "btn_switch_sem_imaging")
         self.btn_switch_fm_imaging = xrc.XRCCTRL(self, "btn_switch_fm_imaging")
@@ -734,6 +736,7 @@ class xrcpnl_tab_localization(wx.Panel):
         self.btn_go_to_feature = xrc.XRCCTRL(self, "btn_go_to_feature")
         self.ctrl_feature_z = xrc.XRCCTRL(self, "ctrl_feature_z")
         self.btn_use_current_z = xrc.XRCCTRL(self, "btn_use_current_z")
+        self.menu_localization_streams = xrc.XRCCTRL(self, "menu_localization_streams")
         self.btn_z_localization = xrc.XRCCTRL(self, "btn_z_localization")
         self.lbl_z_localization = xrc.XRCCTRL(self, "lbl_z_localization")
         self.gauge_z_localization = xrc.XRCCTRL(self, "gauge_z_localization")
@@ -2458,6 +2461,14 @@ b\xeb\x85\x9f\xb6B\x1d\x0cK\x17\xac\xf0\x12\xfe\xa0\xe5\xee\xe03\xb1\xfa\
             <assign_var>1</assign_var>
           </XRCED>
         </object>
+            <object class="wxMenuItem" name="menu_item_show_correlation">
+          <label>Show Correlation Tab</label>
+          <enabled>1</enabled>
+          <checkable>1</checkable>
+          <XRCED>
+            <assign_var>1</assign_var>
+          </XRCED>
+        </object>
         <label>View</label>
       </object>
       <object class="wxMenu">
@@ -3689,8 +3700,10 @@ D\xc48\xc6qd\x1b\xed\x886\x1a\xa5\x00\x00D0\xc6\x181?\x03\x96\xf6I\x16\
 					<object class="wxBoxSizer">
 						<object class="sizeritem">
 							<object class="wxPanel" name="pnl_project">
-								<object class="wxBoxSizer">
-									<orient>wxVERTICAL</orient>
+								<object class="wxGridBagSizer">
+									<cols>2</cols>
+									<rows>3</rows>
+									<hgap>50</hgap>
 									<object class="sizeritem">
 										<object class="wxStaticText">
 											<label>Project</label>
@@ -3700,57 +3713,79 @@ D\xc48\xc6qd\x1b\xed\x886\x1a\xa5\x00\x00D0\xc6\x181?\x03\x96\xf6I\x16\
 												<sysfont>wxSYS_DEFAULT_GUI_FONT</sysfont>
 											</font>
 										</object>
-										<flag>wxBOTTOM|wxALL</flag>
-										<border>5</border>
+										<flag>wxALL|wxEXPAND</flag>
+										<border>10</border>
+										<cellpos>0,0</cellpos>
+										<cellspan>1,3</cellspan>
 									</object>
 									<object class="sizeritem">
-										<object class="wxBoxSizer">
-											<object class="sizeritem">
-												<object class="wxTextCtrl" name="txt_projectpath">
-													<size>-1,20</size>
-													<value>Select a destination file</value>
-													<fg>#2FA7D4</fg>
-													<bg>#4D4D4D</bg>
-													<style>wxBORDER_NONE|wxTE_READONLY</style>
-													<XRCED>
-														<assign_var>1</assign_var>
-													</XRCED>
-													<font>
-														<size>12</size>
-													</font>
-												</object>
-												<option>1</option>
-												<flag>wxEXPAND</flag>
-											</object>
-											<object class="sizeritem">
-												<object class="ImageTextButton" name="btn_change_folder">
-													<height>24</height>
-													<face_colour>blue</face_colour>
-													<label>New Project</label>
-													<fg>#1A1A1A</fg>
-													<font>
-														<size>14</size>
-														<sysfont>wxSYS_DEFAULT_GUI_FONT</sysfont>
-													</font>
-													<XRCED>
-														<assign_var>1</assign_var>
-													</XRCED>
-												</object>
-											</object>
-											<orient>wxHORIZONTAL</orient>
+										<object class="wxTextCtrl" name="txt_projectpath">
+											<!-- <size>-1,20</size> -->
+											<value>Select a destination file</value>
+											<fg>#2FA7D4</fg>
+											<bg>#4D4D4D</bg>
+											<proportion>1</proportion>
+											<style>wxBORDER_NONE|wxTE_READONLY</style>
+											<flag>wxEXPAND|wxALL</flag>
+											<XRCED>
+												<assign_var>1</assign_var>
+											</XRCED>
+											<font>
+												<size>12</size>
+											</font>
 										</object>
-										<flag>wxEXPAND</flag>
+										<option>1</option>
+										<flag>wxALL|wxEXPAND</flag>
+										<border>10</border>
+										<cellpos>1,0</cellpos>
+										<cellspan>1,3</cellspan>
 									</object>
-									<flag>wxEXPAND</flag>
+									<object class="sizeritem">
+										<object class="ImageTextButton" name="btn_change_folder">
+											<height>24</height>
+											<face_colour>blue</face_colour>
+											<label>New Project</label>
+											<fg>#1A1A1A</fg>
+											<font>
+												<size>14</size>
+												<sysfont>wxSYS_DEFAULT_GUI_FONT</sysfont>
+											</font>
+											<XRCED>
+												<assign_var>1</assign_var>
+											</XRCED>
+										</object>
+										<flag>wxALL|wxEXPAND</flag>
+										<border>10</border>
+										<cellpos>2,0</cellpos>
+									</object>
+									<object class="sizeritem">
+										<object class="ImageTextButton" name="btn_load_project">
+											<height>24</height>
+											<face_colour>blue</face_colour>
+											<label>Load Project</label>
+											<fg>#1A1A1A</fg>
+											<font>
+												<size>14</size>
+												<sysfont>wxSYS_DEFAULT_GUI_FONT</sysfont>
+											</font>
+											<XRCED>
+												<assign_var>1</assign_var>
+											</XRCED>
+										</object>
+										<flag>wxALL|wxEXPAND</flag>
+										<border>10</border>
+										<cellpos>2,1</cellpos>												
+									</object>
+									<flag>wxALL|wxALIGN_CENTRE|wxEXPAND</flag>
 								</object>
-								<flag>wxEXPAND</flag>
+								<flag>wxALL|wxALIGN_CENTRE|wxEXPAND</flag>
 								<fg>#E5E5E5</fg>
 								<bg>#444444</bg>
 								<XRCED>
 									<assign_var>2</assign_var>
 								</XRCED>
 							</object>
-							<flag>wxBOTTOM|wxEXPAND</flag>
+							<flag>wxALL|wxALIGN_CENTRE|wxEXPAND</flag>
 							<border>5</border>
 						</object>
 						<orient>wxVERTICAL</orient>
@@ -7622,9 +7657,7 @@ D\x02\x12\x0c/\x81\x10.\xc4\xcc\xb0\x8f\xa1\x9e\xa1\x81a/\x90\x05\x06\x8d\
                             <object class="sizeritem">
                               <object class="wxStaticText" name="lbl_optical_autofocus">
                                 <label>Optical Autofocus</label>
-                                <font>
-                                  <sysfont>wxSYS_DEFAULT_GUI_FONT</sysfont>
-                                </font>
+                                <fg>#DDDDDD</fg>
                               </object>
                               <flag>wxALL|wxALIGN_CENTRE_VERTICAL</flag>
                               <border>5</border>
@@ -7646,9 +7679,7 @@ D\x02\x12\x0c/\x81\x10.\xc4\xcc\xb0\x8f\xa1\x9e\xa1\x81a/\x90\x05\x06\x8d\
                             <object class="sizeritem">
                               <object class="wxStaticText" name="lbl_sem_autofocus">
                                 <label>SEM Autofocus</label>
-                                <font>
-                                  <sysfont>wxSYS_DEFAULT_GUI_FONT</sysfont>
-                                </font>
+                                <fg>#DDDDDD</fg>
                               </object>
                               <flag>wxALL|wxALIGN_CENTRE_VERTICAL</flag>
                               <border>5</border>
@@ -7670,9 +7701,7 @@ D\x02\x12\x0c/\x81\x10.\xc4\xcc\xb0\x8f\xa1\x9e\xa1\x81a/\x90\x05\x06\x8d\
                             <object class="sizeritem">
                               <object class="wxStaticText" name="lbl_autobrightness_contrast">
                                 <label>Auto-brigtness/contrast</label>
-                                <font>
-                                  <sysfont>wxSYS_DEFAULT_GUI_FONT</sysfont>
-                                </font>
+                                <fg>#DDDDDD</fg>
                               </object>
                               <flag>wxALL|wxALIGN_CENTRE_VERTICAL</flag>
                               <border>5</border>
@@ -8731,6 +8760,21 @@ D\xc48\xc6qd\x1b\xed\x886\x1a\xa5\x00\x00D0\xc6\x181?\x03\x96\xf6I\x16\
                             <object class="sizeritem">
                               <object class="wxBoxSizer">
                                 <object class="sizeritem">
+                                  <object class="ImageToggleButton" name="menu_localization_streams">
+                                    <icon>______img_icon_arr_down_s_png</icon>
+                                    <height>24</height>
+                                    <size>20,24</size>
+                                    <face_colour>def</face_colour>
+                                    <label/>
+                                    <fg>#1A1A1A</fg>
+                                    <XRCED>
+                                      <assign_var>1</assign_var>
+                                    </XRCED>
+                                  </object>
+                                  <flag>wxRIGHT</flag>
+                                  <border>1</border>
+                                </object>
+                                <object class="sizeritem">
                                   <object class="ImageTextButton" name="btn_z_localization">
                                     <height>24</height>
                                     <label>Locate Z...</label>
@@ -8741,7 +8785,7 @@ D\xc48\xc6qd\x1b\xed\x886\x1a\xa5\x00\x00D0\xc6\x181?\x03\x96\xf6I\x16\
                                     <bg>#000000</bg>
                                   </object>
                                   <flag>wxRIGHT</flag>
-                                  <border>10</border>
+                                  <border>2</border>
                                 </object>
                                 <object class="sizeritem">
                                   <object class="wxStaticText" name="lbl_z_localization">
@@ -9346,6 +9390,17 @@ D\x02\x12\x0c/\x81\x10.\xc4\xcc\xb0\x8f\xa1\x9e\xa1\x81a/\x90\x05\x06\x8d\
 "\x0c`\x09\xcd\x16p<\xc0\xe0O\x86f\x06\xaa\x01\x00\x07s?\xea["x\xa5\x00\
 \x00\x00\x00IEND\xaeB`\x82'''
 
+    ______img_icon_arr_down_s_png = b'''\
+\x89PNG\x0d
+\x1a
+\x00\x00\x00\x0dIHDR\x00\x00\x00\x10\x00\x00\x00\x10\x08\x04\x00\x00\x00\
+\xb5\xfa7\xea\x00\x00\x00rIDAT(\x91c`\x18R@\x98A\x9eA\x0e\x0ee\x18\x18\xd1\
+\x15\x941\xfcG\x82g\x188P\xa5\x99\x18\x94\x18.\x01%\xfeA\x15\xb81\xb0\xa1\
+\x9b\xc0\xcd\x10\xc6\xf0\x07*=\x8dA\x14\x9b+\xe4\x19\xd6\x81\xa5\x1f2\x98\
+1\xb0`S\xc0\xc6\xe0\xc9\xf0\x09hJ\x07\x83\x00.\x9f\xf03,`\xb8\xc7\xa0\x01\
+t\x11\x0e\xc0\xc2\xa0\xc3\x10\xca\xc0\x85K\x1ab\x0d\x27n\xfd\xe4\x01\x00\
+A\xb7\x1c}\xd5\xe9\xa4\xa3\x00\x00\x00\x00IEND\xaeB`\x82'''
+
     ______img_icon_ico_acqui_png = b'''\
 \x89PNG\x0d
 \x1a
@@ -9410,6 +9465,7 @@ C/7\xc8\x17\xc9\xc0\xb1\x17\x87u:\xd0\xf6W\xce\xec\xe2\xc0\xfc\x19\x8f\xe6\
     wx.MemoryFSHandler.AddFile('XRC/panel_tab_localization/panel_tab_localization_xrc', bytearray(panel_tab_localization_xrc.encode('utf-8')))
     wx.MemoryFSHandler.AddFile('XRC/panel_tab_localization/______img_icon_ico_chevron_up_png', bytearray(______img_icon_ico_chevron_up_png))
     wx.MemoryFSHandler.AddFile('XRC/panel_tab_localization/______img_icon_ico_trash_png', bytearray(______img_icon_ico_trash_png))
+    wx.MemoryFSHandler.AddFile('XRC/panel_tab_localization/______img_icon_arr_down_s_png', bytearray(______img_icon_arr_down_s_png))
     wx.MemoryFSHandler.AddFile('XRC/panel_tab_localization/______img_icon_ico_acqui_png', bytearray(______img_icon_ico_acqui_png))
     wx.MemoryFSHandler.AddFile('XRC/panel_tab_localization/______img_icon_ico_sem_png', bytearray(______img_icon_ico_sem_png))
     __res.Load('memory:XRC/panel_tab_localization/panel_tab_localization_xrc')

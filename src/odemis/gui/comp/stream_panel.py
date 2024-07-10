@@ -140,9 +140,9 @@ class StreamPanelHeader(wx.Control):
     def _add_remove_btn(self):
         """ Add a button for stream removal """
         btn_rem = buttons.ImageButton(self,
-                                      bitmap=img.getBitmap("icon/ico_rem_str.png"),
+                                      bitmap=img.getBitmap("icon/ico_clear.png"),
                                       size=self.BUTTON_SIZE)
-        btn_rem.bmpHover = img.getBitmap("icon/ico_rem_str_h.png")
+        btn_rem.bmpHover = img.getBitmap("icon/ico_clear_h.png")
         btn_rem.SetToolTip("Remove stream")
         self._add_ctrl(btn_rem)
         return btn_rem
@@ -808,12 +808,6 @@ class StreamPanel(wx.Panel):
         self.gb_sizer.Add(lbl_ctrl, (self.num_rows, 0),
                           flag=wx.ALL | wx.ALIGN_CENTER_VERTICAL, border=5)
         return lbl_ctrl
-
-    def Destroy(self):
-        super().Destroy()
-
-        if self.stream.tint:
-            self.stream.tint.unsubscribe(self._header._on_colormap_value)
 
     @control_bookkeeper
     def add_autobc_ctrls(self):

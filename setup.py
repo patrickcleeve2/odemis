@@ -13,7 +13,7 @@ import sys
 import numpy
 
 # To be updated to the current version
-VERSION = "3.4.0"
+VERSION = "3.5.0"
 # We cannot use the git version because it's not (always) available when building
 # the debian package
 
@@ -95,6 +95,7 @@ if sys.platform.startswith('linux'):
                'install/linux/usr/bin/odemis-hw-status',
                'install/linux/usr/bin/odemis-live-view',
                'install/linux/usr/bin/odemis-mic-selector',
+               'install/linux/usr/bin/odemis-select-mic-start',
                'util/piconfig',
                'util/pituner',
                'util/piterminal',

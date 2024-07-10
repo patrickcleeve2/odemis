@@ -207,8 +207,8 @@ class Camera(model.DigitalCamera):
         """
         # compute the min/max of the shift. It's the same as the margin between
         # the centered ROI and the border, taking into account the binning.
-        max_tran = ((self._img.shape[-1] - self._resolution[0] * self._binning[0]) // 2,
-                    (self._img.shape[-2] - self._resolution[1] * self._binning[1]) // 2)
+        max_tran = ((self._img_res[0] - self._resolution[0] * self._binning[0]) // 2,
+                    (self._img_res[1] - self._resolution[1] * self._binning[1]) // 2)
 
         # between -margin and +margin
         trans = (max(-max_tran[0], min(value[0], max_tran[0])),
@@ -421,8 +421,10 @@ class SimpleDataFlow(model.DataFlow):
             self._evtq.put(None)  # in case it was waiting for an event
 
     def synchronizedOn(self, event):
+        super().synchronizedOn(event)
         if self._sync_event == event:
             return
+
         if self._sync_event:
             self._sync_event.unsubscribe(self)
             if not event:

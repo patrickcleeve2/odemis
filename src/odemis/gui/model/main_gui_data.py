@@ -372,6 +372,9 @@ class MainGUIData(object):
 
         self.hw_settings_config = get_hw_settings_config(self.role)
 
+        # Used by the MIMAS, but needs to be initialized as empty for the SECOM & cryo microscopes.
+        self.sample_centers: Dict[str, Tuple[float, float]] = {}  # sample name -> center position (x, y)
+
         # Set to True to request debug info to be displayed
         self.debug = model.BooleanVA(False)
         self.level = model.IntVA(0)  # Highest message level not seen by the user so far
@@ -382,6 +385,9 @@ class MainGUIData(object):
         # MicroscopyGUIData would be better in theory, but is less convenient
         # do directly access additional GUI information.
         self.tab = model.VAEnumerated(None, choices={None: ""})
+
+        # Indicate whether the gui is loaded as viewer
+        self.is_viewer = self.microscope is None
 
     def stopMotion(self):
         """
@@ -458,7 +464,6 @@ class CryoMainGUIData(MainGUIData):
 
     def __init__(self, microscope):
         super().__init__(microscope)
-        self.sample_centers : Dict[str, Tuple[float, float]] = {}  # sample name -> center position (x, y)
 
         # Controls the stage movement based on the imaging mode
         self.posture_manager = MicroscopePostureManager(microscope)

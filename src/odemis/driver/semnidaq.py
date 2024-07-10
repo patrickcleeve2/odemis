@@ -39,7 +39,7 @@ Odemis. If not, see http://www.gnu.org/licenses/.
 # SED : AI1/AI GND = pins 33/32
 # BSD : AI2/AI GND = pins 65/64
 #
-# To install the NI driver, here is a summarry of the commands needed:
+# To install the NI driver, here is a summary of the commands needed:
 # Download from https://www.ni.com/nl-nl/support/documentation/supplemental/18/downloading-and-installing-ni-driver-software-on-linux-desktop.html
 # sudo apt install ./ni-ubuntu2004-drivers-stream.deb
 # sudo apt update
@@ -66,6 +66,7 @@ import functools
 import gc
 import logging
 import math
+import os
 import queue
 import subprocess
 import sys
@@ -169,6 +170,13 @@ class AnalogSEM(model.HwComponent):
             model.MD_HW_VERSION: self._hwVersion,
         }
 
+        try:
+            # Increase scheduling priority in order to reduce the chances of not reading/writing the
+            # data buffers frequently enough.
+            os.setpriority(os.PRIO_PROCESS, os.getpid(), -10)
+        except OSError as ex:
+            logging.warning("Failed to increase scheduling priority: %s. Might cause frame drops.", ex)
+
         if multi_detector_min_period is None:
             # Use the very minimum period of the board if not specified
             # Note that it may still give warnings
@@ -231,7 +239,7 @@ class AnalogSEM(model.HwComponent):
             HwError: if the installation has some issue
         """
         # Normally does nothing, but will fail if NI-DAQmx is not ready
-        canary_cmd = [sys.executable, "-c", "import nidaqmx; nidaqmx.system.System.local().devices"]
+        canary_cmd = [sys.executable, "-c", "import nidaqmx; all(nidaqmx.system.System.local().devices)"]
         process = subprocess.run(canary_cmd)
         return_code = process.returncode
 
@@ -742,9 +750,6 @@ class Acquirer:
                     self._settings_too_fast = not self._acquire_series(detectors, continuous=True)
         except ImmediateStop:
             logging.debug("Acquisition stopped immediately")
-        except Exception:
-            logging.exception("Failure during acquisition")
-            raise
 
         # Stopped.
         # TODO: move to indicate_scan_state()
@@ -1040,6 +1045,13 @@ class Acquirer:
             # Find a round number of pixels per period and convert back to samples
             logging.debug("AI buffer set to the size of a number of pixels")
             return max(2, int(period / pixel_dur) * acq_settings.ai_osr)  # samples
+
+        # Can we fit just one pixel if we extend a bit the period? If so, acquire one pixel at a time
+        # This is mainly to handle odd cases when the dwell time is just above the period (eg, 0.11 s)
+        # in which case we would end up reading a full buffer followed by a tiny bit of a second one.
+        if pixel_dur < (2 * period):
+            logging.debug("AI buffer set to the size of a single pixel")
+            return max(2, acq_settings.ai_osr)  # samples
 
         # OK... let's give up, even a pixel doesn't fit in a period, so just fit exactly the number of samples
         logging.debug("AI buffer set to less than a pixel")
@@ -1879,9 +1891,7 @@ class Scanner(model.Emitter):
                  limits: List[List[float]],
                  park: Optional[List[float]] = None,
                  scanning_ttl: Dict[int, List] = None,
-                 pixel_ttl: Optional[List[int]] = None,
-                 line_ttl: Optional[List[int]] = None,
-                 frame_ttl: Optional[List[int]] = None,
+                 image_ttl: Optional[Dict[str, Dict[str, Any]]] = None,
                  settle_time: float = 0,
                  scan_active_delay: float = 0,
                  hfw_nomag: float = 0.1,
@@ -1897,15 +1907,18 @@ class Scanner(model.Emitter):
         :param park (None or 2-tuple of (0<=float)): voltage (in V) of resting position,
         if None, it will default to top-left corner. If the beam cannot be blanked
         this will be the position of the beam when not scanning.
-        :param pixel_ttl: digital output channels (on port0) to indicate the beginning
-        of a scan of a pixel. It goes high the first half of the duration of a pixel.
-        :param line_ttl: digital output channels (on port0) to indicate the beginning
-        of a line, not including the settling time. It goes high on the first
-        pixel of the line, and goes down at the end of the last pixel.
-        :param frame_ttl: digital output channels (on port0) to indicate the beginning
-        of a frame, not including the settling time. It goes high on the first
+        :param image_ttl: digital output channels (on port0) to indicate various moments of
+        the image acquisition: "pixel" defines the beginning of a scan of a pixel. It goes high
+        the first half of the duration of a pixel. "line" defines the beginning of a scan of a line,
+        not including the settling time. It goes high on the first pixel of the line,
+        and goes down at the end of the last pixel. "frame" defines the beginning of a scan of a
+        frame, not including the settling time. It goes high on the first
         pixel of the frame, and goes down at the end of the last pixel.
-        :param scanning_ttl (None or dict of int -> (bool, Optional[str], bool))):
+        For each of the 3 types of TTL, a dictionary can be provided with the following keys:
+        * "port": list of int, defining the digital output port(s) to use.
+        * "affects": list of str, containing the names of components which are physically connected
+        to the signal.
+        :param scanning_ttl (None or dict of int -> (bool, bool, Optional[str])):
         List of digital output ports to indicate the ebeam is scanning or not.
         * First argument is "high_auto": if True, it is set to high when scanning,
         with False, the output is inverted.
@@ -2021,28 +2034,49 @@ class Scanner(model.Emitter):
 
         # Validate fast TTLs
         fast_do_channels = set()  # set of ints, to check all channels are unique
-        if not all (v is None or isinstance(v, list) for v in (pixel_ttl, line_ttl, frame_ttl)):
-            raise ValueError("pixel_ttl, line_ttl and frame_ttl should be lists of int, but got %s, %s, %s" %
-                             (pixel_ttl, line_ttl, frame_ttl))
-        pixel_ttl = pixel_ttl or []
-        line_ttl = line_ttl or []
-        frame_ttl = frame_ttl or []
-        for do_channel in pixel_ttl + line_ttl + frame_ttl:
-            # Check it's a valid channel
-            if do_channel not in available_do_ports:
-                raise ValueError("DAQ device '%s' does not have digital output %s, available ones: %s" %
-                                 (parent._device_name, do_channel, sorted(available_do_ports)))
+        if image_ttl is None:
+            image_ttl = {}
+        if (not isinstance(image_ttl, dict)
+            or not all(isinstance(k, str) and isinstance(v, dict) for k, v in image_ttl.items())
+           ):
+            raise ValueError(f"image_ttl should be a dict[str->dict], but got '{image_ttl}'")
 
-            if do_channel in scanning_ttl:
-                raise ValueError(f"scanning_ttl and pixel_ttl/line_ttl/frame_ttl cannot have the same channel ({do_channel})")
+        for ttl_type, ttl_info in image_ttl.items():
+            if ttl_type not in ("pixel", "line", "frame"):
+                raise ValueError(f"image_ttl keys should be 'pixel', 'line' or 'frame', but got '{ttl_type}'")
+            try:
+                ports = ttl_info["ports"]
+            except KeyError:
+                raise ValueError(f"image_ttl['{ttl_type}'] should have a 'ports' key")
 
-            if do_channel in fast_do_channels:
-                raise ValueError(f"pixel_ttl/line_ttl/frame_ttl cannot have the same channel ({do_channel})")
-            fast_do_channels.add(do_channel)
+            # Check it's all valid channels
+            for do_channel in ports:
+                if do_channel not in available_do_ports:
+                    raise ValueError("DAQ device '%s' does not have digital output %s requested for %s. Available ones: %s" %
+                                     (parent._device_name, do_channel, ttl_type, sorted(available_do_ports)))
 
-        self._pixel_ttl = pixel_ttl
-        self._line_ttl = line_ttl
-        self._frame_ttl = frame_ttl
+                if do_channel in scanning_ttl:
+                    raise ValueError(
+                        f"Port ({do_channel}) requested for {ttl_type} is already used by scanning_ttl")
+
+                if do_channel in fast_do_channels:
+                    raise ValueError(f"Port {do_channel} requested for {ttl_type} is already used by another TTL")
+                fast_do_channels.add(do_channel)
+
+        self._pixel_ttl = []
+        self._line_ttl = []
+        self._frame_ttl = []
+
+        for ttl_type, ports_name, ev_name in (("pixel", "_pixel_ttl", "newPixel"),
+                                              ("line", "_line_ttl", "newLine"),
+                                              ("frame", "_frame_ttl", "newFrame")):
+            if ttl_type in image_ttl:
+                ttl_info = image_ttl[ttl_type]
+                setattr(self, ports_name, ttl_info["ports"])
+                event = model.HwTrigger()
+                affects = ttl_info.get("affects", [])
+                event.affects.value.extend(affects)
+                setattr(self, ev_name, event)
 
         # TODO: have a better way to indicate the channel number as it's limited to port0
         # while there is also port 1 & 2. Explicitly ask the full NI name? as "port1/line3"? Or as written on hardware "P1.3"?
@@ -2961,7 +2995,6 @@ class SEMDataFlow(model.DataFlow):
 
         self._sync_event = None  # event to be synchronised on, or None
         self._evtq = None  # a Queue to store received events (= float, time of the event)
-        self._prev_max_discard = self._max_discard
 
         self.inverted = inverted
 
@@ -3011,12 +3044,12 @@ class SEMDataFlow(model.DataFlow):
         event (model.Event or None): event to synchronize with. Use None to
           disable synchronization.
         """
+        super().synchronizedOn(event)
         if self._sync_event == event:
             return
 
         if self._sync_event:
             self._sync_event.unsubscribe(self)
-            self.max_discard = self._prev_max_discard
             if not event:
                 self._evtq.put(None)  # in case it was waiting for this event
 
@@ -3025,8 +3058,6 @@ class SEMDataFlow(model.DataFlow):
             # if the df is synchronized, the subscribers probably don't want to
             # skip some data
             self._evtq = queue.Queue()  # to be sure it's empty
-            self._prev_max_discard = self._max_discard
-            self.max_discard = 0
             self._sync_event.subscribe(self)
 
     @oneway
