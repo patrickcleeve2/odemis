@@ -48,6 +48,12 @@ def reformat_ome_metadata(fn: str, new_fn: str):
     # save the image
     exporter.export(new_fn, new_data) #only exports a single channel
 
+    # fix x and y position in the metadata (scaled in micrometers)
+    old_tfile = TIFF.open(fn, mode="r")
+    xpos = old_tfile.GetField(T.TIFFTAG_XPOSITION)
+    ypos = old_tfile.GetField(T.TIFFTAG_YPOSITION)
+    old_tfile.close()
+
     # overwrite the metadata inplace
     tfile = TIFF.open(new_fn, mode="r+w")
 
@@ -60,6 +66,10 @@ def reformat_ome_metadata(fn: str, new_fn: str):
 
     # set the updated image desc (valid ome-xml)
     tfile.SetField(T.TIFFTAG_IMAGEDESCRIPTION, md_str[idx:].encode("utf-8"))
+    
+    # set the x and y position for each image # TODO: this only sets for the first page
+    tfile.SetField(T.TIFFTAG_XPOSITION, xpos)
+    tfile.SetField(T.TIFFTAG_YPOSITION, ypos)
 
     # save / close file
     tfile.close()
