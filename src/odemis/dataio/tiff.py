@@ -1618,11 +1618,14 @@ def _addImageElement(root, das, ifd, rois, fname=None, fuuid=None):
         # (and ModuloAlongT "tile")
         if model.MD_POS in da.metadata:
             pos = da.metadata[model.MD_POS]
-            plane.attrib["PositionX"] = "%.15f" % pos[0] # any unit is allowed => m
-            plane.attrib["PositionY"] = "%.15f" % pos[1]
+            # pos_um = da.metadata.get("use_um", False) 
+            # scale = 1e6 if pos_um else 1
+            scale = 1
+            plane.attrib["PositionX"] = "%.15f" % (pos[0] * scale) # any unit is allowed => m
+            plane.attrib["PositionY"] = "%.15f" % (pos[1] * scale)
 
             if len(pos) == 3:
-                plane.attrib["PositionZ"] = "%.15f" % pos[2]
+                plane.attrib["PositionZ"] = "%.15f" % (pos[2] * scale)
 
         subid += 1
 
