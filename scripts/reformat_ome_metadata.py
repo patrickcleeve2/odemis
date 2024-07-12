@@ -12,6 +12,9 @@ from ome_types.model.simple_types import PixelType
 import tifffile
 import sys
 
+# install the following packages
+# pip install numpy ome_types tifffile
+
 def add_odemis_path():
     """Add the odemis path to the python path"""
     def parse_config(path) -> dict:
@@ -36,7 +39,7 @@ from odemis import model
 from odemis.util.dataio import open_acquisition
 from odemis.util import fluo
 
-DEBUG = True
+DEBUG = False # set to True to manipulate synthetic data
 
 def reformat_ome_metadata(filename: str, new_fn: str) -> None:
     """Open an odemis image and reformat the metadata to OME-XML format (2016-06)"""
