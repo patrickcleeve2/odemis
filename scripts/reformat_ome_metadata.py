@@ -13,7 +13,15 @@ import tifffile
 import sys
 
 # install the following packages
-# pip install numpy ome_types tifffile
+# python3.10 -m venv venv
+# source venv/bin/activate
+# pip install numpy==1.21.5 ome_types tifffile pylibtiff==0.6.1
+
+# run the script
+# navigate to directory containing venv:
+# source venv/bin/activate
+# python reformat_ome_metadata.py /path/to/ome-tiff-files
+
 
 def add_odemis_path():
     """Add the odemis path to the python path"""
