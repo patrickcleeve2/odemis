@@ -76,13 +76,20 @@ def reformat_ome_metadata(filename: str, new_fn: str) -> None:
     channel_md = []
     for d in image_data:
 
-        iwl = d.metadata[model.MD_IN_WL]
-        xwl = fluo.get_one_center(iwl) * 1e9  # in nm
-        owl = d.metadata[model.MD_OUT_WL]
+        # TODO: confirm this works for reflection imaging
+        if model.MD_IN_WL in d.metadata:
+            iwl = d.metadata[model.MD_IN_WL]
+            xwl = fluo.get_one_center(iwl) * 1e9  # in nm
+        else:
+            xwl = None
 
-        # Use excitation wavelength in case of multiple bands
-        ewl = fluo.get_one_center_em(owl, iwl) * 1e9  # in nm
-
+        if model.MD_OUT_WL in d.metadata:
+            owl = d.metadata[model.MD_OUT_WL] 
+            # Use excitation wavelength in case of multiple bands
+            ewl = fluo.get_one_center_em(owl, iwl) * 1e9  # in nm
+        else:
+            ewl = None
+        
         channel_md.append(
             {"emission": ewl, "excitation": xwl}
         )
