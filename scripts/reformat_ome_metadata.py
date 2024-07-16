@@ -38,10 +38,13 @@ def add_odemis_path():
 
     odemis_path = "/etc/odemis.conf"
     config = parse_config(odemis_path)
-    sys.path.append(f"{config['DEVPATH']}/odemis/src")  # dev version
-    sys.path.append("/usr/lib/python3/dist-packages")   # release version + pyro4
+    # dev version,  release version + pyro4
+    paths = [f"{config['DEVPATH']}/odemis/src",  "/usr/lib/python3/dist-packages/"]
+    for path in paths:
+        sys.path.append(path)
+    return paths
 
-add_odemis_path()
+paths = add_odemis_path()
 
 from odemis import model
 from odemis.util.dataio import open_acquisition
@@ -254,3 +257,11 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+    # remove odemis from sys path
+    for path in paths:
+        print(f"Remove {path} from sys.path")
+        try:
+            sys.path.remove(path)
+        except:
+            print(f"Unable to remove {path} from sys.path")
