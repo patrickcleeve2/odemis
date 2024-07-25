@@ -24,22 +24,34 @@ Odemis. If not, see http://www.gnu.org/licenses/.
 # Everything related to high-level image acquisition on the microscope.
 
 
+import copy
+import logging
+import threading
+import time
 from collections import OrderedDict
 from collections.abc import Iterable
 from concurrent.futures import CancelledError
-import logging
-import threading
+from concurrent.futures._base import CANCELLED, FINISHED, RUNNING
+from typing import Dict, List
 
 from odemis import model
 from odemis.acq import _futures
-from odemis.acq.stream import FluoStream, SEMCCDMDStream, SEMMDStream, SEMTemporalMDStream, \
-    OverlayStream, OpticalStream, EMStream, ScannedFluoStream, ScannedFluoMDStream, \
-    ScannedRemoteTCStream, ScannedTCSettingsStream
-from odemis.util import img, fluo, executeAsyncTask
-import time
-import copy
+from odemis.acq.stream import (
+    EMStream,
+    FluoStream,
+    OpticalStream,
+    OverlayStream,
+    ScannedFluoMDStream,
+    ScannedFluoStream,
+    ScannedRemoteTCStream,
+    ScannedTCSettingsStream,
+    SEMCCDMDStream,
+    SEMMDStream,
+    SEMTemporalMDStream,
+    Stream,
+)
 from odemis.model import prepare_to_listen_to_more_vas
-from concurrent.futures._base import CANCELLED, FINISHED, RUNNING
+from odemis.util import executeAsyncTask, fluo, img
 from odemis.util.driver import guessActuatorMoveDuration
 from odemis.util.img import assembleZCube
 
@@ -109,6 +121,25 @@ def acquireZStack(streams, zlevels, settings_obs=None):
 
     return future
 
+
+def acquire_streams(
+    streams: List[Stream],
+    zlevels: Dict[Stream, float] = None,
+    settings_obs: "SettingsObserver" = None,
+):
+    """Wrapper for handling acquisition of zstacks and single acquisitions."""
+    if zlevels:
+        return acquireZStack(streams, zlevels, settings_obs)
+    return acquire(streams, settings_obs)
+
+
+def estimate_acquisition_time(
+    streams: List[Stream], zlevels: Dict[Stream, float] = None
+) -> float:
+    """Wrapper for handling estimation of acquisition time of zstacks and single acquisitions."""
+    if zlevels:
+        return estimateZStackAcquisitionTime(streams, zlevels)
+    return estimateTime(streams)
 
 class ZStackAcquisitionTask(object):
     """
