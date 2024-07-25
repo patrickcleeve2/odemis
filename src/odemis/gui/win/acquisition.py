@@ -1293,21 +1293,6 @@ class FeatureAcquisitionDialog(xrcfr_feature_acq):
         # duplicate the interface, but with only one view
         self._tab_data_model = self.duplicate_tab_data_model(orig_tab_data)
 
-        # Store the final image as {datelng}-{timelng}-overview
-        # The pattern to store them in a sub folder, with the name xxxx-overview-tiles/xxx-overview-NxM.ome.tiff
-        # The pattern to use for storing each tile file individually
-        # None disables storing them
-        # save_dir = self.conf.last_path
-        # if isinstance(orig_tab_data, guimodel.CryoGUIData):
-            # save_dir = self.conf.pj_last_path
-        
-        # self.filename = create_filename(save_dir, "{datelng}-{timelng}-overview",
-                                            #   ".ome.tiff")
-        # assert self.filename.endswith(".ome.tiff")
-        # dirname, basename = os.path.split(self.filename)
-        # tiles_dir = os.path.join(dirname, basename[:-len(".ome.tiff")] + "-tiles")
-        # self.filename_tiles = os.path.join(tiles_dir, basename)
-
         # Create a new settings controller for the acquisition dialog
         self._settings_controller = LocalizationSettingsController(
             self,
@@ -1358,6 +1343,62 @@ class FeatureAcquisitionDialog(xrcfr_feature_acq):
 
         # To update the estimated time & area when streams are removed/added
         self._view.stream_tree.flat.subscribe(self.on_streams_changed, init=True)
+
+        # features, status
+        from odemis.acq.feature import CryoFeature, FEATURE_ACTIVE, FEATURE_ROUGH_MILLED, FEATURE_POLISHED, FEATURE_DEACTIVE
+        self.ALL_STATUS = [FEATURE_ACTIVE, FEATURE_ROUGH_MILLED, FEATURE_POLISHED, FEATURE_DEACTIVE]
+
+        features = self._main_data_model.features.value
+        status = list(set(f.status.value for f in features))
+
+        # QUERY: should we list all the possible statuses (incl discarded?) 
+        # or the ones that are currently in the feature?
+
+        # add the current features to the ListBox (pnl_features)
+        # self.lst_feature_status.Enable(True)
+        # self.lst_features.Enable(True)
+        for i, f in enumerate(features):
+            self.lst_features.Insert(f.name.value, i, f)
+        self.lst_feature_status.AppendItems(status)
+
+        # self.lst_features.AppendItems(feature_names)
+
+        # Bind events
+        self.lst_feature_status.Bind(wx.EVT_CHECKLISTBOX, self.on_status_check)
+        self.lst_features.Bind(wx.EVT_CHECKLISTBOX, self.on_feature_check)
+
+        self.Layout()
+
+    def on_status_check(self, event):
+
+        # TODO: make this more efficient, only do the changed status, not loop through all
+        # get all the status checked
+        checked_status = [self.lst_feature_status.GetString(i) for i in range(self.lst_feature_status.GetCount()) if self.lst_feature_status.IsChecked(i)]
+
+
+        for status in self.ALL_STATUS:
+            # get all the features with this status
+            for i in range(self.lst_features.GetCount()):
+                feature = self.lst_features.GetClientData(i)
+                if feature.status.value == status:
+                    is_checked = status in checked_status
+                    logging.warning(f"Status '{status}' is {'checked' if is_checked else 'unchecked'}, feature '{feature.name.value}'")
+                    self.lst_features.Check(i, is_checked)
+
+        # TODO: filter the feature list based on the checked statuses
+
+    def on_feature_check(self, event):
+        index = event.GetSelection()
+        feature = self.lst_features.GetClientData(index)
+        is_checked = self.lst_features.IsChecked(index)
+        logging.warning(f"Feature '{feature.name.value}' is {'checked' if is_checked else 'unchecked'}")
+
+        # get all the features checked
+        features = [self.lst_features.GetClientData(i) for i in range(self.lst_features.GetCount()) if self.lst_features.IsChecked(i)]
+        logging.warning(f"Features checked: {[f.name.value for f in features]}")
+        # TODO: filter the feature list based on status + feature selection...
+    
+    # TODO: add control over streams...
 
     def start_listening_to_va(self):
         # Get all the VA's from the stream and subscribe to them for changes.
@@ -1463,15 +1504,6 @@ class FeatureAcquisitionDialog(xrcfr_feature_acq):
         if self.acquiring:
             return
 
-        areas = self._get_areas()
-
-        if not areas:
-            # This can happen if the stage is situated outside of the active range
-            # or all areas have been unselected (when sample_centers is used).
-            logging.debug("Unknown acquisition area, cannot estimate acquisition time")
-            self.lbl_acqestimate.SetLabel("Select an area to acquire.")
-            return
-
         streams = self.get_acq_streams()
         if not streams:
             # This can happen if the user removes all the streams.
@@ -1479,21 +1511,8 @@ class FeatureAcquisitionDialog(xrcfr_feature_acq):
             self.lbl_acqestimate.SetLabel("Add a stream area to acquire.")
             return
 
-        zlevels = self._get_zstack_levels()
-        focus_mtd = FocusingMethod.MAX_INTENSITY_PROJECTION if zlevels else FocusingMethod.NONE
-
-        acq_time = stitching.estimateOverviewTime(streams=streams,
-                                                    stage=self.stage,
-                                                    areas=areas,
-                                                    focus=self.focuser,
-                                                    detector=self.detector,
-                                                    overlap=self.overlap,
-                                                    settings_obs=self.settings_obs,
-                                                    weaver=WEAVER_MEAN,
-                                                    registrar=REGISTER_IDENTITY,
-                                                    zlevels=zlevels,
-                                                    focusing_method=focus_mtd,
-                                                    use_autofocus=self.autofocus_roi_ckbox.value)
+        from odemis.acq.acqmng import estimateTime
+        acq_time = estimateTime(streams)
 
         txt = "The estimated acquisition time is {}."
         txt = txt.format(units.readable_time(math.ceil(acq_time)))
@@ -1542,13 +1561,6 @@ class FeatureAcquisitionDialog(xrcfr_feature_acq):
         self.streambar_controller.pause()
         self.streambar_controller.enable(False)
 
-        self.whole_grid_chkbox.Enable(False)
-        self.tiles_number_x.Enable(False)
-        self.tiles_number_y.Enable(False)
-        self.autofocus_chkbox.Enable(False)
-        if self._grids:
-            self._grids.Enable(False)
-
     def _resume_settings(self):
         """ Resume the settings of the GUI and save the values for restoring them later """
         self._settings_controller.enable(True)
@@ -1556,30 +1568,6 @@ class FeatureAcquisitionDialog(xrcfr_feature_acq):
 
         self.streambar_controller.enable(True)
         self.streambar_controller.resume()
-
-        self.whole_grid_chkbox.Enable(True)
-        self.autofocus_chkbox.Enable(True)
-        if self._grids:
-            # Enable/disable the grid and tile numbers based on the "whole grid" checkbox
-            self._on_whole_grid_chkbox()
-
-    def _get_zstack_levels(self, rel: bool = False):
-        """
-        Calculate the zstack levels from the current focus position and zsteps value
-        :param rel: If this is False (default), then z stack levels are in absolute values. If rel is set to True then
-         the z stack levels are calculated relative to each other.
-        :returns:
-            (list(float) or None) zstack levels for zstack acquisition. None if only one zstep is requested.
-        """
-        return get_zstack_levels(zsteps=self.zsteps.value, zstep_size=self.zstep_size.value, rel=rel, focuser=self.focuser)
-
-    def _fit_view_to_area(self, area: Tuple[float,float]):
-        center = ((area[0] + area[2]) / 2,
-                  (area[1] + area[3]) / 2)
-        self._view.view_pos.value = center
-
-        fov = (area[2] - area[0], area[3] - area[1])
-        self.pnl_view_acq.set_mpp_from_fov(fov)
 
     def on_acquire(self, evt):
         """ Start the actual acquisition """
@@ -1604,9 +1592,11 @@ class FeatureAcquisitionDialog(xrcfr_feature_acq):
         if self._main_data_model.opm:
             self._main_data_model.opm.setAcqQuality(path.ACQ_QUALITY_BEST)
 
-        logging.warning(f"Got to the end of acquire function...")
-        return 
-
+        logging.warning(f"Got to the acquire function...")
+        
+        from odemis.acq.acqmng import acquire
+        self.acq_future = acquire(acq_streams, self._main_data_model.settings_obs)
+    
         self._acq_future_connector = ProgressiveFutureConnector(self.acq_future,
                                                                 self.gauge_acq,
                                                                 self.lbl_acqestimate)

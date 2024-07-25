@@ -53,6 +53,40 @@
                         <fg>#1A1A1A</fg>
                         <bg>#555555</bg>
                       </object>
+                      <object class="FoldPanelItem" name="fp_features">
+                        <object class="wxPanel" name="pnl_features">
+                          <object class="wxBoxSizer">
+                            <object class="sizeritem">
+                              <object class="wxCheckListBox" name="lst_feature_status">
+                                <size>300,200</size>
+                                <fg>#DDDDDD</fg>
+                                <bg>#333333</bg>
+                                <style>wxLB_MULTIPLE</style>
+                                <XRCED>
+                                  <assign_var>1</assign_var>
+                                </XRCED>
+                              </object>
+                              <flag>wxEXPAND</flag>
+                            </object>
+                            <object class="sizeritem">
+                              <object class="wxCheckListBox" name="lst_features">
+                                <size>300,200</size>
+                                <fg>#DDDDDD</fg>
+                                <bg>#333333</bg>
+                                <style>wxLB_MULTIPLE</style>
+                                <XRCED>
+                                  <assign_var>1</assign_var>
+                                </XRCED>
+                              </object>
+                              <flag>wxEXPAND</flag>
+                            </object>
+                          </object>
+                          <bg>#333333</bg>
+                        </object>
+                        <label>FEATURES</label>
+                        <fg>#1A1A1A</fg>
+                        <bg>#555555</bg>
+                      </object>
                       <spacing>0</spacing>
                       <leftspacing>0</leftspacing>
                       <rightspacing>0</rightspacing>

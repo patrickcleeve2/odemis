@@ -111,6 +111,10 @@ class xrcfr_feature_acq(wx.Dialog):
         self.scr_win_right = xrc.XRCCTRL(self, "scr_win_right")
         self.fp_settings_secom_optical = xrc.XRCCTRL(self, "fp_settings_secom_optical")
         self.pnl_secom_streams = xrc.XRCCTRL(self, "pnl_secom_streams")
+        self.fp_features = xrc.XRCCTRL(self, "fp_features")
+        self.pnl_features = xrc.XRCCTRL(self, "pnl_features")
+        self.lst_feature_status = xrc.XRCCTRL(self, "lst_feature_status")
+        self.lst_features = xrc.XRCCTRL(self, "lst_features")
         self.gauge_acq = xrc.XRCCTRL(self, "gauge_acq")
         self.lbl_acqestimate = xrc.XRCCTRL(self, "lbl_acqestimate")
         self.btn_cancel = xrc.XRCCTRL(self, "btn_cancel")
@@ -1713,6 +1717,40 @@ b\xeb\x85\x9f\xb6B\x1d\x0cK\x17\xac\xf0\x12\xfe\xa0\xe5\xee\xe03\xb1\xfa\
                           </XRCED>
                         </object>
                         <label>STREAMS</label>
+                        <fg>#1A1A1A</fg>
+                        <bg>#555555</bg>
+                      </object>
+                      <object class="FoldPanelItem" name="fp_features">
+                        <object class="wxPanel" name="pnl_features">
+                          <object class="wxBoxSizer">
+                            <object class="sizeritem">
+                              <object class="wxCheckListBox" name="lst_feature_status">
+                                <size>300,200</size>
+                                <fg>#DDDDDD</fg>
+                                <bg>#333333</bg>
+                                <style>wxLB_MULTIPLE</style>
+                                <XRCED>
+                                  <assign_var>1</assign_var>
+                                </XRCED>
+                              </object>
+                              <flag>wxEXPAND</flag>
+                            </object>
+                            <object class="sizeritem">
+                              <object class="wxCheckListBox" name="lst_features">
+                                <size>300,200</size>
+                                <fg>#DDDDDD</fg>
+                                <bg>#333333</bg>
+                                <style>wxLB_MULTIPLE</style>
+                                <XRCED>
+                                  <assign_var>1</assign_var>
+                                </XRCED>
+                              </object>
+                              <flag>wxEXPAND</flag>
+                            </object>
+                          </object>
+                          <bg>#333333</bg>
+                        </object>
+                        <label>FEATURES</label>
                         <fg>#1A1A1A</fg>
                         <bg>#555555</bg>
                       </object>
