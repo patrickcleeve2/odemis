@@ -36,10 +36,10 @@ from concurrent.futures._base import CancelledError
 
 import wx
 
-from odemis import model, dataio
+from odemis import dataio, model
 from odemis.acq import acqmng, stream
-from odemis.acq.feature import acquire_at_features
-from odemis.acq.stream import FluoStream, StaticStream, BrightfieldStream
+from odemis.acq.feature import acquire_at_features, add_feature_info_filename
+from odemis.acq.stream import BrightfieldStream, FluoStream, StaticStream
 from odemis.gui import conf
 from odemis.gui.cont.acquisition._constants import VAS_NO_ACQUISITION_EFFECT
 from odemis.gui.cont.acquisition.overview_stream_acq import (
@@ -53,9 +53,7 @@ from odemis.gui.util.widgets import (
 from odemis.gui.win.acquisition import ShowAcquisitionFileDialog
 from odemis.util import units
 from odemis.util.comp import generate_zlevels
-from odemis.util.dataio import splitext
-from odemis.util.filename import guess_pattern, create_filename, update_counter
-
+from odemis.util.filename import create_filename, guess_pattern, update_counter
 
 # constants for the acquisition future state of the cryo-secom
 ST_FINISHED = "FINISHED"
@@ -335,6 +333,8 @@ class CryoAcquiController(object):
         except Exception as e:
             logging.warning(f"Error resetting acquisition GUI: {e}")
 
+            # TODO: refresh the feature streams in gui after this, they are not auto updated.
+
     def _reset_acquisition_gui(self, text=None, state=None):
         """
         Resets some GUI widgets for the next acquisition
@@ -389,21 +389,6 @@ class CryoAcquiController(object):
         data = future.result()
         self._display_acquired_data(data)
 
-    def _add_feature_info_filename(self, filename: str) -> str:
-        """
-        Add feature name, feature status and the counter at the end of the filename.
-        :param filename: filename given by user
-        """
-        path_base, ext = splitext(filename)
-        feature = self._tab_data.main.currentFeature.value
-        feature_name = feature.name.value
-        feature_status = feature.status.value
-
-        path, basename = os.path.split(path_base)
-        ptn = f"{basename}-{feature_name}-{feature_status}-{{cnt}}"
-
-        return create_filename(path, ptn, ext, count="001")
-
     def _export_data(self, data, thumb_nail):
         """
         Called to export the acquired data.
@@ -412,7 +397,8 @@ class CryoAcquiController(object):
         """
         filename = self._filename.value
         if data:
-            filename = self._add_feature_info_filename(filename)
+            filename = add_feature_info_filename(feature=self._tab_data.main.currentFeature.value, 
+                                                 filename=filename)
             exporter = dataio.get_converter(self._config.last_format)
             exporter.export(filename, data, thumb_nail)
             logging.info(u"Acquisition saved as file '%s'.", filename)
