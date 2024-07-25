@@ -35,6 +35,7 @@ def get_resources():
 
 
 
+
 class xrcfr_acq(wx.Dialog):
 #!XRCED:begin-block:xrcfr_acq.PreCreate
     def PreCreate(self, *args):
@@ -72,6 +73,44 @@ class xrcfr_acq(wx.Dialog):
         self.fp_settings_secom_sem = xrc.XRCCTRL(self, "fp_settings_secom_sem")
         self.pnl_secom_streams = xrc.XRCCTRL(self, "pnl_secom_streams")
         self.chkbox_fine_align = xrc.XRCCTRL(self, "chkbox_fine_align")
+        self.gauge_acq = xrc.XRCCTRL(self, "gauge_acq")
+        self.lbl_acqestimate = xrc.XRCCTRL(self, "lbl_acqestimate")
+        self.btn_cancel = xrc.XRCCTRL(self, "btn_cancel")
+        self.btn_secom_acquire = xrc.XRCCTRL(self, "btn_secom_acquire")
+
+
+
+
+class xrcfr_feature_acq(wx.Dialog):
+#!XRCED:begin-block:xrcfr_feature_acq.PreCreate
+    def PreCreate(self, *args):
+        """ This function is called during the class's initialization.
+
+        Override it for custom setup before the window is created usually to
+        set additional window styles using SetWindowStyle() and SetExtraStyle().
+        """
+        pass
+
+#!XRCED:end-block:xrcfr_feature_acq.PreCreate
+
+    def __init__(self, parent):
+        if wx.MAJOR_VERSION == 3:
+            # Two stage creation (see http://wiki.wxpython.org/index.cgi/TwoStageCreation)
+            pre = wx.PreDialog()
+            self.PreCreate(pre)
+            get_resources().LoadOnDialog(pre, parent, "fr_feature_acq")
+            self.PostCreate(pre)
+        else:
+            wx.Dialog.__init__(self)
+            self.PreCreate()
+            get_resources().LoadDialog(self, parent, "fr_feature_acq")
+
+        # Define variables for the controls, bind event handlers
+        self.pnl_view_acq = xrc.XRCCTRL(self, "pnl_view_acq")
+        self.main_buttons = xrc.XRCCTRL(self, "main_buttons")
+        self.scr_win_right = xrc.XRCCTRL(self, "scr_win_right")
+        self.fp_settings_secom_optical = xrc.XRCCTRL(self, "fp_settings_secom_optical")
+        self.pnl_secom_streams = xrc.XRCCTRL(self, "pnl_secom_streams")
         self.gauge_acq = xrc.XRCCTRL(self, "gauge_acq")
         self.lbl_acqestimate = xrc.XRCCTRL(self, "lbl_acqestimate")
         self.btn_cancel = xrc.XRCCTRL(self, "btn_cancel")
@@ -1622,6 +1661,232 @@ b\xeb\x85\x9f\xb6B\x1d\x0cK\x17\xac\xf0\x12\xfe\xa0\xe5\xee\xe03\xb1\xfa\
     wx.MemoryFSHandler.AddFile('XRC/dialog_acq/dialog_acq_xrc', bytearray(dialog_acq_xrc.encode('utf-8')))
     wx.MemoryFSHandler.AddFile('XRC/dialog_acq/______img_icon_ico_acqui_png', bytearray(______img_icon_ico_acqui_png))
     __res.Load('memory:XRC/dialog_acq/dialog_acq_xrc')
+
+    dialog_feature_acq_xrc = u'''\
+<?xml version="1.0" ?><resource xmlns="http://www.wxwidgets.org/wxxrc" class="wxFrame" version="2.5.3.0">
+  <object class="wxDialog" name="fr_feature_acq">
+    <object class="wxFlexGridSizer">
+      <cols>2</cols>
+      <rows>2</rows>
+      <growablecols>0</growablecols>
+      <growablerows>0</growablerows>
+      <object class="sizeritem">
+        <object class="LiveViewport" name="pnl_view_acq">
+          <XRCED>
+            <assign_var>1</assign_var>
+          </XRCED>
+        </object>
+        <flag>wxEXPAND</flag>
+      </object>
+      <object class="sizeritem">
+        <object class="wxPanel">
+          <object class="wxBoxSizer">
+            <object class="sizeritem">
+              <object class="wxPanel" name="main_buttons">
+                <size>400,-1</size>
+                <fg>#DDDDDD</fg>
+                <bg>#4D4D4D</bg>
+              </object>
+              <flag>wxEXPAND</flag>
+            </object>
+            <object class="sizeritem">
+              <object class="wxScrolledWindow" name="scr_win_right">
+                <object class="wxBoxSizer">
+                  <orient>wxVERTICAL</orient>
+                  <object class="sizeritem">
+                    <object class="FoldPanelBar">
+                      <object class="FoldPanelItem" name="fp_settings_secom_optical">
+                        <label>OPTICAL SETTINGS</label>
+                        <fg>#1A1A1A</fg>
+                        <bg>#555555</bg>
+                        <XRCED>
+                          <assign_var>1</assign_var>
+                        </XRCED>
+                      </object>
+                      <object class="FoldPanelItem">
+                        <object class="StreamBar" name="pnl_secom_streams">
+                          <size>300,-1</size>
+                          <fg>#7F7F7F</fg>
+                          <bg>#333333</bg>
+                          <XRCED>
+                            <assign_var>1</assign_var>
+                          </XRCED>
+                        </object>
+                        <label>STREAMS</label>
+                        <fg>#1A1A1A</fg>
+                        <bg>#555555</bg>
+                      </object>
+                      <spacing>0</spacing>
+                      <leftspacing>0</leftspacing>
+                      <rightspacing>0</rightspacing>
+                      <bg>#333333</bg>
+                    </object>
+                    <flag>wxEXPAND</flag>
+                  </object>
+                </object>
+                <size>400,-1</size>
+                <bg>#333333</bg>
+                <style>wxVSCROLL</style>
+                <XRCED>
+                  <assign_var>1</assign_var>
+                </XRCED>
+              </object>
+              <option>1</option>
+              <flag>wxEXPAND</flag>
+              <minsize>400,400</minsize>
+            </object>
+            <orient>wxVERTICAL</orient>
+          </object>
+          <size>400,-1</size>
+          <bg>#333333</bg>
+          <style>wxBORDER_NONE</style>
+        </object>
+        <flag>wxEXPAND</flag>
+      </object>
+      <object class="sizeritem">
+        <object class="wxPanel">
+          <object class="wxBoxSizer">
+            <orient>wxHORIZONTAL</orient>
+            <object class="sizeritem">
+              <object class="wxGauge" name="gauge_acq">
+                <size>-1,10</size>
+                <range>100</range>
+                <value>50</value>
+                <hidden>1</hidden>
+                <style>wxGA_SMOOTH</style>
+                <XRCED>
+                  <assign_var>1</assign_var>
+                </XRCED>
+              </object>
+              <option>1</option>
+              <flag>wxALL|wxEXPAND</flag>
+              <border>30</border>
+            </object>
+            <object class="sizeritem">
+              <object class="wxStaticText" name="lbl_acqestimate">
+                <label>Estimated acquisition time is 9999 seconds</label>
+                <fg>#DDDDDD</fg>
+                <font>
+                  <size>14</size>
+                  <sysfont>wxSYS_DEFAULT_GUI_FONT</sysfont>
+                </font>
+                <style>wxALIGN_RIGHT</style>
+                <XRCED>
+                  <assign_var>1</assign_var>
+                </XRCED>
+              </object>
+              <flag>wxALL</flag>
+              <border>23</border>
+            </object>
+          </object>
+          <size>-1,60</size>
+          <bg>#4D4D4D</bg>
+        </object>
+        <flag>wxEXPAND</flag>
+      </object>
+      <object class="sizeritem">
+        <object class="wxPanel">
+          <object class="wxBoxSizer">
+            <object class="sizeritem">
+              <object class="ImageTextButton" name="btn_cancel">
+                <height>48</height>
+                <face_colour>def</face_colour>
+                <label>Close</label>
+                <font>
+                  <size>14</size>
+                  <sysfont>wxSYS_DEFAULT_GUI_FONT</sysfont>
+                </font>
+                <style>wxALIGN_CENTRE</style>
+                <XRCED>
+                  <assign_var>1</assign_var>
+                </XRCED>
+              </object>
+              <option>1</option>
+              <flag>wxTOP|wxBOTTOM|wxLEFT|wxEXPAND</flag>
+              <border>10</border>
+            </object>
+            <orient>wxHORIZONTAL</orient>
+            <object class="sizeritem">
+              <object class="ImageTextButton" name="btn_secom_acquire">
+                <size>242,48</size>
+                <icon>______img_icon_ico_acqui_png</icon>
+                <height>48</height>
+                <face_colour>blue</face_colour>
+                <label>ACQUIRE OVERVIEW</label>
+                <fg>#FFFFFF</fg>
+                <style>wxALIGN_CENTRE</style>
+                <XRCED>
+                  <assign_var>1</assign_var>
+                </XRCED>
+              </object>
+              <option>2</option>
+              <flag>wxALL|wxEXPAND</flag>
+              <border>10</border>
+            </object>
+          </object>
+          <bg>#444444</bg>
+        </object>
+        <flag>wxEXPAND</flag>
+      </object>
+    </object>
+    <title>Feature Acquisition</title>
+    <bg>#000000</bg>
+    <font>
+      <size>9</size>
+      <sysfont>wxSYS_DEFAULT_GUI_FONT</sysfont>
+    </font>
+    <style>wxDEFAULT_DIALOG_STYLE|wxRESIZE_BORDER</style>
+  </object>
+</resource>'''
+
+    ______img_icon_ico_acqui_png = b'''\
+\x89PNG\x0d
+\x1a
+\x00\x00\x00\x0dIHDR\x00\x00\x00&\x00\x00\x00"\x08\x04\x00\x00\x00\x99\
+\xa5c3\x00\x00\x03\x90IDATH\xc7\x8d\x96\xcdk\\U\x18\x87\x9fs\xee93s\xd3\
+6\x99v\xd2Z\xab\xa3\x14\x9a\x04EJhI\xa5Y\x88n\xdc\xd5\x95[QW\x82\xbb\xda\
+\x85\xe0Np\xd1\x9dK\xa5\xf4\x1f\x10\xeaJp!\xd9\x08\x85\x10\xf1s\xa1\x0b\
+\x95Z\x93X\x8aL\xa7\xad\x85\xa4\x99{>\\\xdcs\xef=g&\x13z.Cf\x86\x9cg\xde\
+\xf7\xf7~
+\xcf\x94#\xf6y\xe7\xf7y\x17\x1d5\x15T\xbe\xc4\x04\xcc\xd7 \xff$\xb0
+#\x10\xc8\xf0\x97\x80\xf1\xb8\x80\xf3\x88q\xdc4\xcb\x04\x12\x89$\xabq\x15\
+\xca\xe2p\xb8\x83-\x13\x09H\x90\x85G\x05\\\x892\xd8\xf0\xb8\x80\x8f\x1c\
+V\x13\x1a\x89\x00\x92(4
+E\x86\x04\xc0a1\x14\x18\x0c2X\x98(\xa8&4\x92\xb5E\x8aV\xc0U0\x83aD\x81\
+\xa1\xc0bp\xd8XA5\xa1Q\x05\xd2h\xf4\xe5\xdfz\xe4\x89.W^\xa4`D\x16\xac\x13\
+\xb1\x82*\xb1H\x91\xa1\x83{-4\xba\xc7E\xfa\xa9\xca3\x8c\xc8P\x8c\x90\x14\
+\x08L\xb0:\xd2\xacDit\x09\xa9\x9e\x9c>\x8b),\x0f\xa8,D\x9a:m\x82f"\xc8\xdd\
+\xa2M\x9bV\x00\xaa}\x13\x27GQ$\x81\x01\x8f\xab4\x13A+M\xfb\xf2_\xa9F\xfd\
+1\xc5`\xeb\x9bu\xb6\x1a\x05O\xe3\x83j>vS\xa1i\x8fk\x94\xd3\xc3\x0f\xcc\xaf\
+\xc5\x03\xd3\x93g\xdb\xb3\x8a\x1e\x17Yn\xfe\xa1\x15\xb2N\x94\x9a\xc5\xf2\
+Oh\xe4\x87\xe6\xba\xd8\xd0h\xc0fw^k\xbd\xd3\xcd\x9f\x8d\x8a\x15MA\x86,\x13\
+[F\xa9\xa1\xd0\xa9K\xfe\xae\xfbPoT\x9f2\xdb_{\xfc\xd1\xed\x9d\xdd\xb8\x8e\
+t]pQ9UY\x96\xb0\xcc\xa7z\x08\xdf.\xdd|S\xcc\xcfm\xaf|y\xe1\xf6\xf3\x9b\xeb\
+\x9f\xb9+\xa7\xe9\xd4\xbf\x10\xec
+\x10\x92L\x8b\x8e\xfdA\xff\x097V\xd7>9y\xee\xc2s\xe7V\x1f^\xfdi\x09^^\xff\
+}{X\xa6UcD\xe8,2*t\x19\x8b\x01\xe6{\xb0\xe2\x97w\x97\xe4*+,\xb3\xa2[o\x81\
+\xf4\x8f~\xbcK\xd1\xc0Ds\xab)\xa7\xb4\xa7\x02\xc5\xbd6\xb7\x8e\xce\x1c[\
+\xa4t\xabC\xb6\x00 \x06\x03vi\x13\xdd\x0c\xf7%S\x8f\xe9@o\xe7\x90\xed\x86\
+\x8b\x82\xfc\x01\xc0N\xbe\x1bjh\xfc\xc8\xa6\x18\xc6\xdb\x9d]\x80c\x8f\x8f\
+\xdc\x1ca\xab\x88\xac\x01<<\xa3\x1b\x1b|\xdc\xcae\xd4\xdf]
+\xcb^\xd9\xed\xc0\xa5k\x83\xef\x86X\xf0\xf6ku\x03\xfe\xe8\xed-\xcfUN\x92\
+t4T\xd4\xdb]mB\xd9\x1e\xba\x9bo\x9f\xf9|\xfe\xd1\xab\x1f\xdfy\xfa\xde\xf1\
+#\xdb\xf9}2\xa3\xbfx\xff\xa4~*\x86\xb9\xa6\xe7\xaa\xe4\xcb\x04\xa69\xfa\
+\xfa\xc6\xde\xd9\xeb\xb9=\xb5\xc9\xdf\x08\xe4\xa0s\xed\x83|\xf9\x05N4\x1d\
+\xc0\x86\x8e\x1bE\xb3\xea\xefE:U\xe6\xe8_Z??\xfc\xaa\xfb\xf3\xec\xff\xce\
+\xdf:\xff\x8d\xe3\xdd\x97X\xe4p\x14\xf2z\x1a\x00*rq\x0c\x06\x8a\x13\xb4\
+Nm\xbf\xb7\xc5?\x8c\xe8\xb2@\x9fg\x98\x8dS\xa0\xc04\xd3@\xd5\xe2\x1b
+\xf6&\x87W\x8f\xc3\xf4\xd9\xc1\x91q\x88\x19Zi2\x96\x13!\x84N\xf8\xb2\x90\
+\xaa.\xdb\x0eC\xa4\xac\x06\x17\x8d\x0cB\xc9\x95c\xaf\xf4d\xc4\x1e#\x8a\x00\
+t*R\xac\xb4\xd12\xaa\x1br\x99.\x8e\xb8xd\xf8\xdea)jP\x14\xcd\xe6\x82\xc3\
+"\xc9B\x81\xf8h\xd0\xc6\xdbG\xa5\xb3\xc1\x06\xcd\xea\x00\xd4\xd3%\x98\x1f\
+\xef\x17\xe3K@\xbau4\xcb\x82\x8f\x03@p\xc8\x05GD\xaa\xf3\xd8\xf1\xf5\xe3\
+b\xeb\x85\x9f\xb6B\x1d\x0cK\x17\xac\xf0\x12\xfe\xa0\xe5\xee\xe03\xb1\xfa\
+\xfd\x0fw\x1e\x8e\xedP\x81\x83V\x00\x00\x00\x00IEND\xaeB`\x82'''
+
+    wx.MemoryFSHandler.AddFile('XRC/dialog_feature_acq/dialog_feature_acq_xrc', bytearray(dialog_feature_acq_xrc.encode('utf-8')))
+    wx.MemoryFSHandler.AddFile('XRC/dialog_feature_acq/______img_icon_ico_acqui_png', bytearray(______img_icon_ico_acqui_png))
+    __res.Load('memory:XRC/dialog_feature_acq/dialog_feature_acq_xrc')
 
     dialog_overview_acq_xrc = u'''\
 <?xml version="1.0" ?><resource xmlns="http://www.wxwidgets.org/wxxrc" class="wxFrame" version="2.5.3.0">

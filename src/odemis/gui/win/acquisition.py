@@ -46,7 +46,7 @@ from odemis.gui.conf import get_acqui_conf, util
 from odemis.gui.cont.settings import (LocalizationSettingsController,
                                       SecomSettingsController)
 from odemis.gui.cont.stream_bar import StreamBarController
-from odemis.gui.main_xrc import xrcfr_acq, xrcfr_overview_acq
+from odemis.gui.main_xrc import xrcfr_acq, xrcfr_overview_acq, xrcfr_feature_acq
 from odemis.gui.model import TOOL_NONE, AcquisitionWindowData, StreamView
 from odemis.gui.util import (call_in_wx_main, formats_to_wildcards,
                              wxlimit_invocation)
@@ -1191,6 +1191,421 @@ class OverviewAcquisitionDialog(xrcfr_overview_acq):
             focusing_method=focus_mtd,
             use_autofocus=use_autofocus,
         )
+
+        self._acq_future_connector = ProgressiveFutureConnector(self.acq_future,
+                                                                self.gauge_acq,
+                                                                self.lbl_acqestimate)
+        # TODO: Build-up the complete image during the acquisition, so that the
+        #       progress can be followed live.
+        self.acq_future.add_done_callback(self.on_acquisition_done)
+
+        self.btn_cancel.SetLabel("Cancel")
+        self.btn_cancel.Bind(wx.EVT_BUTTON, self.on_cancel)
+
+    def on_cancel(self, evt):
+        """ Handle acquisition cancel button click """
+        logging.info("Cancel button clicked, stopping acquisition")
+        self.acq_future.cancel()
+        self.acquiring = False
+        self.btn_cancel.SetLabel("Close")
+        # all the rest will be handled by on_acquisition_done()
+
+    @call_in_wx_main
+    def on_acquisition_done(self, future):
+        """ Callback called when the acquisition is finished (either successfully or cancelled) """
+        if self._main_data_model.opm:
+            self._main_data_model.opm.setAcqQuality(path.ACQ_QUALITY_FAST)
+
+        # bind button back to direct closure
+        self.btn_cancel.Bind(wx.EVT_BUTTON, self.on_close)
+        self._resume_settings()
+
+        self.acquiring = False
+
+        self.acq_future = None  # To avoid holding the ref in memory
+        self._acq_future_connector = None
+
+        try:
+            data = future.result(1)  # timeout is just for safety
+            self.conf.fn_count = update_counter(self.conf.fn_count)
+        except CancelledError:
+            # put back to original state:
+            # re-enable the acquire button
+            self.btn_secom_acquire.Enable()
+
+            # hide progress bar (+ put pack estimated time)
+            self.update_acquisition_time()
+            self.gauge_acq.Hide()
+            self.Layout()
+            return
+        except Exception:
+            # We cannot do much: just warn the user and pretend it was cancelled
+            logging.exception("Acquisition failed")
+            self.btn_secom_acquire.Enable()
+            self.lbl_acqestimate.SetLabel("Acquisition failed.")
+            self.lbl_acqestimate.Parent.Layout()
+            # leave the gauge, to give a hint on what went wrong.
+            return
+
+        # Now store the data (as pyramidal data), and open it again (but now it's
+        # backed with the persistent storage.
+        try:
+            exporter = dataio.find_fittest_converter(self.filename)
+            if exporter.CAN_SAVE_PYRAMID:
+                exporter.export(self.filename, data, pyramid=True)
+            else:
+                logging.warning("File format doesn't support saving image in pyramidal form")
+                exporter.export(self.filename)
+            self.data = exporter.open_data(self.filename).content
+        except Exception:
+            # We cannot do much: just warn the user and pretend it was cancelled
+            logging.exception("Storage failed")
+            self.btn_secom_acquire.Enable()
+            self.lbl_acqestimate.SetLabel("Storage failed.")
+            self.lbl_acqestimate.Parent.Layout()
+            return
+
+        self.terminate_listeners()
+        self.EndModal(wx.ID_OPEN)
+
+
+class FeatureAcquisitionDialog(xrcfr_feature_acq):
+    """
+    Class used to control the overview acquisition dialog
+    The data acquired is stored in a file, with predefined name, available on
+      .filename and it is opened (as pyramidal data) in .data .
+    """
+    def __init__(self, parent, orig_tab_data):
+        xrcfr_feature_acq.__init__(self, parent)
+
+        self.conf = get_acqui_conf()
+
+        # True when acquisition occurs
+        self.acquiring = False
+        self.data = None
+
+        # a ProgressiveFuture if the acquisition is going on
+        self.acq_future = None
+        self._acq_future_connector = None
+
+        self._main_data_model = orig_tab_data.main
+
+        # duplicate the interface, but with only one view
+        self._tab_data_model = self.duplicate_tab_data_model(orig_tab_data)
+
+        # Store the final image as {datelng}-{timelng}-overview
+        # The pattern to store them in a sub folder, with the name xxxx-overview-tiles/xxx-overview-NxM.ome.tiff
+        # The pattern to use for storing each tile file individually
+        # None disables storing them
+        # save_dir = self.conf.last_path
+        # if isinstance(orig_tab_data, guimodel.CryoGUIData):
+            # save_dir = self.conf.pj_last_path
+        
+        # self.filename = create_filename(save_dir, "{datelng}-{timelng}-overview",
+                                            #   ".ome.tiff")
+        # assert self.filename.endswith(".ome.tiff")
+        # dirname, basename = os.path.split(self.filename)
+        # tiles_dir = os.path.join(dirname, basename[:-len(".ome.tiff")] + "-tiles")
+        # self.filename_tiles = os.path.join(tiles_dir, basename)
+
+        # Create a new settings controller for the acquisition dialog
+        self._settings_controller = LocalizationSettingsController(
+            self,
+            self._tab_data_model,
+        )
+
+        orig_view = orig_tab_data.focussedView.value
+        self._view = self._tab_data_model.focussedView.value
+
+        self.streambar_controller = StreamBarController(self._tab_data_model,
+                                                        self.pnl_secom_streams,
+                                                        static=True,
+                                                        locked=False,
+                                                        ignore_view=True)
+        # The streams currently displayed are the one visible
+        self.add_streams()
+
+        # The list of streams ready for acquisition (just used as a cache)
+        self._acq_streams = {}
+
+        # Find every setting, and listen to it
+        self._orig_entries = get_global_settings_entries(self._settings_controller)
+        for sc in self.streambar_controller.stream_controllers:
+            self._orig_entries += get_local_settings_entries(sc)
+
+        self.start_listening_to_va()
+
+        # make sure the view displays the same thing as the one we are
+        # duplicating
+        self._view.view_pos.value = orig_view.view_pos.value
+        self._view.mpp.value = orig_view.mpp.value
+        self._view.merge_ratio.value = orig_view.merge_ratio.value
+
+        # attach the view to the viewport
+        self.pnl_view_acq.canvas.fit_view_to_next_image = False
+        self.pnl_view_acq.setView(self._view, self._tab_data_model)
+
+        self.Bind(wx.EVT_CHAR_HOOK, self.on_key)
+
+        self.btn_cancel.Bind(wx.EVT_BUTTON, self.on_close)
+        self.btn_secom_acquire.Bind(wx.EVT_BUTTON, self.on_acquire)
+        self.Bind(wx.EVT_CLOSE, self.on_close)
+        
+        # Note: It should never be possible to reach here with no streams
+        streams = self.get_acq_streams()
+        for s in streams:
+            self._view.addStream(s)
+
+        # To update the estimated time & area when streams are removed/added
+        self._view.stream_tree.flat.subscribe(self.on_streams_changed, init=True)
+
+    def start_listening_to_va(self):
+        # Get all the VA's from the stream and subscribe to them for changes.
+        for entry in self._orig_entries:
+            if hasattr(entry, "vigilattr"):
+                entry.vigilattr.subscribe(self.on_setting_change)
+
+    def stop_listening_to_va(self):
+        for entry in self._orig_entries:
+            if hasattr(entry, "vigilattr"):
+                entry.vigilattr.unsubscribe(self.on_setting_change)
+
+    def duplicate_tab_data_model(self, orig):
+        """
+        Duplicate a MicroscopyGUIData and adapt it for the acquisition window
+        The streams will be shared, but not the views
+        orig (MicroscopyGUIData)
+        return (MicroscopyGUIData)
+        """
+        data_model = AcquisitionWindowData(orig.main)
+        data_model.streams.value.extend(orig.streams.value)
+
+        # create view (which cannot move or focus)
+        view = guimodel.MicroscopeView("All")
+        data_model.views.value = [view]
+        data_model.focussedView.value = view
+        return data_model
+
+    def add_streams(self):
+        """
+        Add live streams
+        """
+        # go through all the streams available in the interface model
+        for s in self._tab_data_model.streams.value:
+
+            if not isinstance(s, LiveStream):
+                continue
+
+            sc = self.streambar_controller.addStream(s, add_to_view=self._view)
+            sc.stream_panel.show_remove_btn(True)
+
+    def remove_all_streams(self):
+        """
+        Remove the streams we added to the view on creation
+        Must be called in the main GUI thread
+        """
+        # Ensure we don't update the view after the window is destroyed
+        self.streambar_controller.clear()
+
+        # TODO: need to have a .clear() on the settings_controller to clean up?
+        self._settings_controller = None
+        self._acq_streams = {}  # also empty the cache
+
+        gc.collect()  # To help reclaiming some memory
+
+    def get_acq_streams(self):
+        """
+        return (list of Streams): the streams to be acquired
+        """
+        # Only acquire the streams which are displayed
+        streams = self._view.getStreams()
+        return streams
+
+    @wxlimit_invocation(0.1)
+    def update_setting_display(self):
+        if not self:
+            return
+
+        # if gauge was left over from an error => now hide it
+        if self.acquiring:
+            self.gauge_acq.Show()
+            return
+        elif self.gauge_acq.IsShown():
+            self.gauge_acq.Hide()
+            self.Layout()
+
+        streams = self.get_acq_streams()
+
+        # Disable acquisition button if no area
+        self.btn_secom_acquire.Enable(bool(streams))
+
+        self.update_acquisition_time()
+
+    def on_streams_changed(self, _=None):
+        """
+        When the list of streams to acquire has changed
+        """
+        self.update_setting_display()
+
+    def on_tiles_number(self, _=None):
+        """
+        Called when the user enters values for the tiles number in the GUI.
+        """
+        self.update_setting_display()
+
+    def on_setting_change(self, _=None):
+        self.update_setting_display()
+
+    def update_acquisition_time(self):
+        """
+        Must be called in the main GUI thread.
+        """
+        if self.acquiring:
+            return
+
+        areas = self._get_areas()
+
+        if not areas:
+            # This can happen if the stage is situated outside of the active range
+            # or all areas have been unselected (when sample_centers is used).
+            logging.debug("Unknown acquisition area, cannot estimate acquisition time")
+            self.lbl_acqestimate.SetLabel("Select an area to acquire.")
+            return
+
+        streams = self.get_acq_streams()
+        if not streams:
+            # This can happen if the user removes all the streams.
+            logging.debug("No streams available cannot estimate acquisition time")
+            self.lbl_acqestimate.SetLabel("Add a stream area to acquire.")
+            return
+
+        zlevels = self._get_zstack_levels()
+        focus_mtd = FocusingMethod.MAX_INTENSITY_PROJECTION if zlevels else FocusingMethod.NONE
+
+        acq_time = stitching.estimateOverviewTime(streams=streams,
+                                                    stage=self.stage,
+                                                    areas=areas,
+                                                    focus=self.focuser,
+                                                    detector=self.detector,
+                                                    overlap=self.overlap,
+                                                    settings_obs=self.settings_obs,
+                                                    weaver=WEAVER_MEAN,
+                                                    registrar=REGISTER_IDENTITY,
+                                                    zlevels=zlevels,
+                                                    focusing_method=focus_mtd,
+                                                    use_autofocus=self.autofocus_roi_ckbox.value)
+
+        txt = "The estimated acquisition time is {}."
+        txt = txt.format(units.readable_time(math.ceil(acq_time)))
+        self.lbl_acqestimate.SetLabel(txt)
+
+    def on_key(self, evt):
+        """ Dialog key press handler. """
+        if evt.GetKeyCode() == wx.WXK_ESCAPE:
+            self.Close()
+        else:
+            evt.Skip()
+
+    def terminate_listeners(self):
+        """
+        Disconnect all the connections to the streams.
+        Must be called in the main GUI thread.
+        """
+        # stop listening to events
+        self._view.stream_tree.flat.unsubscribe(self.on_streams_changed)
+        self.stop_listening_to_va()
+
+        self.remove_all_streams()
+        # Set the streambar controller to None so it wouldn't be a listener to stream.remove
+        self.streambar_controller = None
+
+    def on_close(self, evt):
+        """ Close event handler that executes various cleanup actions
+        """
+        if self.acq_future:
+            # TODO: ask for confirmation before cancelling?
+            # What to do if the acquisition is done while asking for
+            # confirmation?
+            msg = "Cancelling acquisition due to closing the acquisition window"
+            logging.info(msg)
+            self.acq_future.cancel()
+
+        self.terminate_listeners()
+
+        self.EndModal(wx.ID_CANCEL)
+
+    def _pause_settings(self):
+        """ Pause the settings of the GUI and save the values for restoring them later """
+        self._settings_controller.pause()
+        self._settings_controller.enable(False)
+
+        self.streambar_controller.pause()
+        self.streambar_controller.enable(False)
+
+        self.whole_grid_chkbox.Enable(False)
+        self.tiles_number_x.Enable(False)
+        self.tiles_number_y.Enable(False)
+        self.autofocus_chkbox.Enable(False)
+        if self._grids:
+            self._grids.Enable(False)
+
+    def _resume_settings(self):
+        """ Resume the settings of the GUI and save the values for restoring them later """
+        self._settings_controller.enable(True)
+        self._settings_controller.resume()
+
+        self.streambar_controller.enable(True)
+        self.streambar_controller.resume()
+
+        self.whole_grid_chkbox.Enable(True)
+        self.autofocus_chkbox.Enable(True)
+        if self._grids:
+            # Enable/disable the grid and tile numbers based on the "whole grid" checkbox
+            self._on_whole_grid_chkbox()
+
+    def _get_zstack_levels(self, rel: bool = False):
+        """
+        Calculate the zstack levels from the current focus position and zsteps value
+        :param rel: If this is False (default), then z stack levels are in absolute values. If rel is set to True then
+         the z stack levels are calculated relative to each other.
+        :returns:
+            (list(float) or None) zstack levels for zstack acquisition. None if only one zstep is requested.
+        """
+        return get_zstack_levels(zsteps=self.zsteps.value, zstep_size=self.zstep_size.value, rel=rel, focuser=self.focuser)
+
+    def _fit_view_to_area(self, area: Tuple[float,float]):
+        center = ((area[0] + area[2]) / 2,
+                  (area[1] + area[3]) / 2)
+        self._view.view_pos.value = center
+
+        fov = (area[2] - area[0], area[3] - area[1])
+        self.pnl_view_acq.set_mpp_from_fov(fov)
+
+    def on_acquire(self, evt):
+        """ Start the actual acquisition """
+        logging.info("Acquire button clicked, starting acquisition")
+        acq_streams = self.get_acq_streams()
+        if not acq_streams:
+            logging.info("No stream to acquire, ending immediately")
+            self.on_close(evt)  # Nothing to do, so it's the same as closing the window
+
+        self.acquiring = True
+
+        self.btn_secom_acquire.Disable()
+
+        # Freeze all the settings so that it's not possible to change anything
+        self._pause_settings()
+        # TODO: also disable the area settings.
+
+        self.gauge_acq.Show()
+        self.Layout()  # to put the gauge at the right place
+
+        # For now, always indicate the best quality
+        if self._main_data_model.opm:
+            self._main_data_model.opm.setAcqQuality(path.ACQ_QUALITY_BEST)
+
+        logging.warning(f"Got to the end of acquire function...")
+        return 
 
         self._acq_future_connector = ProgressiveFutureConnector(self.acq_future,
                                                                 self.gauge_acq,

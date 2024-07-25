@@ -33,17 +33,18 @@ import os
 from builtins import str
 from concurrent import futures
 from concurrent.futures._base import CancelledError
+from typing import List, Dict
 
 import wx
 
 from odemis import dataio, model
 from odemis.acq import acqmng, stream
 from odemis.acq.feature import acquire_at_features, add_feature_info_filename
-from odemis.acq.stream import BrightfieldStream, FluoStream, StaticStream
+from odemis.acq.stream import BrightfieldStream, FluoStream, StaticStream, Stream
 from odemis.gui import conf
 from odemis.gui.cont.acquisition._constants import VAS_NO_ACQUISITION_EFFECT
 from odemis.gui.cont.acquisition.overview_stream_acq import (
-    OverviewStreamAcquiController,
+    OverviewStreamAcquiController, FeatureStreamAcquisitionController
 )
 from odemis.gui.util import call_in_wx_main, wxlimit_invocation
 from odemis.gui.util.widgets import (
@@ -75,6 +76,9 @@ class CryoAcquiController(object):
         self.overview_acqui_controller = OverviewStreamAcquiController(
             self._tab_data, self._tab
         )
+        self.feature_acqui_controller = FeatureStreamAcquisitionController(
+            self._tab_data, self._tab
+        )
         self._config = conf.get_acqui_conf()
         # contains the acquisition progressive future for the given streams
         self._acq_future = None
@@ -97,7 +101,7 @@ class CryoAcquiController(object):
         # bind events (buttons, checking, ...) with callbacks
         # for "ACQUIRE" button
         self._panel.btn_cryosecom_acquire.Bind(wx.EVT_BUTTON, self._on_acquire)
-        self._panel.btn_acquire_features.Bind(wx.EVT_BUTTON, self._acquire_at_features)
+        self._panel.btn_acquire_features.Bind(wx.EVT_BUTTON, self._on_acquire_features)
         # for "change..." button
         self._panel.btn_cryosecom_change_file.Bind(
             wx.EVT_BUTTON, self._on_btn_change
@@ -113,7 +117,7 @@ class CryoAcquiController(object):
         self._panel.param_Zmax.SetValueRange(self._tab_data.zMax.range[0], self._tab_data.zMax.range[1])
         self._panel.param_Zstep.SetValueRange(self._tab_data.zStep.range[0], self._tab_data.zStep.range[1])
 
-        self._zlevels = {}  # type: dict[Stream, list[float]]
+        self._zlevels: Dict[Stream, List[float]] = {}
 
         # callbacks of VA's
         self._tab_data.filename.subscribe(self._on_filename, init=True)
@@ -619,6 +623,12 @@ class CryoAcquiController(object):
         das = self.overview_acqui_controller.open_acquisition_dialog()
         if das:
             self._tab.load_overview_data(das)
+
+    def _on_acquire_features(self, _):
+        """called when the button acquire features is pressed"""
+        das = self.feature_acqui_controller.open_acquisition_dialog()
+        if das:
+            logging.info(f"I got some data from features: {das}")
 
     @call_in_wx_main
     def _on_filename(self, name):
