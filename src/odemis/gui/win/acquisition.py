@@ -1351,12 +1351,12 @@ class FeatureAcquisitionDialog(xrcfr_feature_acq):
         features = self._main_data_model.features.value
         status = list(set(f.status.value for f in features))
 
+        # sort the status list by the order of the ALL_STATUS
+        status.sort(key=lambda x: self.ALL_STATUS.index(x))
+
         # QUERY: should we list all the possible statuses (incl discarded?) 
         # or the ones that are currently in the feature?
 
-        # add the current features to the ListBox (pnl_features)
-        # self.lst_feature_status.Enable(True)
-        # self.lst_features.Enable(True)
         for i, f in enumerate(features):
             self.lst_features.Insert(f.name.value, i, f)
         self.lst_feature_status.AppendItems(status)
@@ -1371,19 +1371,22 @@ class FeatureAcquisitionDialog(xrcfr_feature_acq):
 
     def on_status_check(self, event):
 
+        idx = event.GetSelection()
+        status = self.lst_feature_status.GetString(idx)
+        is_checked = self.lst_feature_status.IsChecked(idx)
+    
         # TODO: make this more efficient, only do the changed status, not loop through all
         # get all the status checked
-        checked_status = [self.lst_feature_status.GetString(i) for i in range(self.lst_feature_status.GetCount()) if self.lst_feature_status.IsChecked(i)]
+        # checked_status = [self.lst_feature_status.GetString(i) for i in range(self.lst_feature_status.GetCount()) if self.lst_feature_status.IsChecked(i)]
 
-
-        for status in self.ALL_STATUS:
-            # get all the features with this status
-            for i in range(self.lst_features.GetCount()):
-                feature = self.lst_features.GetClientData(i)
-                if feature.status.value == status:
-                    is_checked = status in checked_status
-                    logging.warning(f"Status '{status}' is {'checked' if is_checked else 'unchecked'}, feature '{feature.name.value}'")
-                    self.lst_features.Check(i, is_checked)
+        # for status in self.ALL_STATUS:
+        # get all the features with this status
+        for i in range(self.lst_features.GetCount()):
+            feature = self.lst_features.GetClientData(i)
+            if feature.status.value == status:
+                # is_checked = status in checked_status
+                logging.warning(f"Status '{status}' is {'checked' if is_checked else 'unchecked'}, feature '{feature.name.value}'")
+                self.lst_features.Check(i, is_checked)
 
         # TODO: filter the feature list based on the checked statuses
 
