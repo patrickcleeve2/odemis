@@ -233,9 +233,11 @@ class CryoChamberTab(Tab):
         Remove the overview static stream from the view with the given list of acquired static streams
         :param streams: (list of StaticStream) the newly acquired static streams from the localization tab
         """
+        return
         try:
             overview_view = self._get_overview_view()
             for stream in streams:
+                logging.warning(f"Removing overview stream: {stream.name.value}")
                 overview_view.removeStream(stream)
         except AttributeError:  # No overview view
             pass

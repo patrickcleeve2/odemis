@@ -540,7 +540,8 @@ class StreamView(View):
         """
         # check if the stream is already present
         if stream in self.stream_tree:
-            logging.warning("Aborting the addition of a duplicate stream")
+            logging.warning(f"Stream {stream.name.value} is already present in view {self.name.value}")
+            logging.warning("Aborting the addition of a duplicate stream") # THIS IS THE ISSUE? Streams with same name / settings are the same????
             return
 
         if not isinstance(stream, self.stream_classes):

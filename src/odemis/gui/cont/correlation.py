@@ -215,6 +215,7 @@ class CorrelationController(object):
 
             # skip existing streams, live streams
             if s in self._tab_data_model.streams.value or not isinstance(s, StaticStream):
+                logging.warning(f"Skipping adding {s.name.value} to correlation tab")
                 continue
 
             # if the user has loaded a rgb stream, assume it is meant to be a SEM stream
@@ -245,6 +246,7 @@ class CorrelationController(object):
         for s in streams:
             # add stream to localizations tab
             if s not in self.localization_tab.tab_data_model.streams.value:
+                logging.warning(f"Adding {s.name.value} to localization tab from correlation tab")
                 self.localization_tab.tab_data_model.overviewStreams.value.append(s)
                 self.localization_tab.tab_data_model.streams.value.insert(0, s)
                 self.localization_tab._acquired_stream_controller.showOverviewStream(s)

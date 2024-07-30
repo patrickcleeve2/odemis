@@ -2084,6 +2084,9 @@ class CryoAcquiredStreamsController(CryoStreamsController):
         self._ov_view.addStream(stream)
         sc = self._add_stream_cont(stream, show_panel=True, static=self.static_mode,
                                    view=self._ov_view)
+        sc.stream_panel.show_remove_btn(True)
+
+        logging.warning(f"I am showing the overview stream {stream.name.value} in the overview view")
 
         return sc
 

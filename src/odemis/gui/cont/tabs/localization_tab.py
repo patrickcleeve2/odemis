@@ -225,6 +225,8 @@ class LocalizationTab(Tab):
         visible_ov_streams = set(self.tab_data_model.views.value[0].getStreams())
         # Invisible overview streams
         invisible_ov_streams = ov_streams.difference(visible_ov_streams)
+        logging.warning(f"Visible overview streams: {visible_ov_streams}")
+        logging.warning(f"Invisible overview streams: {invisible_ov_streams}")
         # Hide the invisible overview streams
         chamber_tab: CryoChamberTab = self.main_data.getTabByName("cryosecom_chamber")
         chamber_tab.remove_overview_streams(invisible_ov_streams)
