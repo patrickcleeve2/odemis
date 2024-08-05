@@ -35,6 +35,7 @@ def get_resources():
 
 
 
+
 class xrcfr_acq(wx.Dialog):
 #!XRCED:begin-block:xrcfr_acq.PreCreate
     def PreCreate(self, *args):
@@ -76,6 +77,42 @@ class xrcfr_acq(wx.Dialog):
         self.lbl_acqestimate = xrc.XRCCTRL(self, "lbl_acqestimate")
         self.btn_cancel = xrc.XRCCTRL(self, "btn_cancel")
         self.btn_secom_acquire = xrc.XRCCTRL(self, "btn_secom_acquire")
+
+
+
+
+class xrcfr_correlation(wx.Dialog):
+#!XRCED:begin-block:xrcfr_correlation.PreCreate
+    def PreCreate(self, *args):
+        """ This function is called during the class's initialization.
+
+        Override it for custom setup before the window is created usually to
+        set additional window styles using SetWindowStyle() and SetExtraStyle().
+        """
+        pass
+
+#!XRCED:end-block:xrcfr_correlation.PreCreate
+
+    def __init__(self, parent):
+        if wx.MAJOR_VERSION == 3:
+            # Two stage creation (see http://wiki.wxpython.org/index.cgi/TwoStageCreation)
+            pre = wx.PreDialog()
+            self.PreCreate(pre)
+            get_resources().LoadOnDialog(pre, parent, "fr_correlation")
+            self.PostCreate(pre)
+        else:
+            wx.Dialog.__init__(self)
+            self.PreCreate()
+            get_resources().LoadDialog(self, parent, "fr_correlation")
+
+        # Define variables for the controls, bind event handlers
+        self.pnl_correlaton_grid = xrc.XRCCTRL(self, "pnl_correlaton_grid")
+        self.vp_correlation_tl = xrc.XRCCTRL(self, "vp_correlation_tl")
+        self.vp_correlation_tr = xrc.XRCCTRL(self, "vp_correlation_tr")
+        self.vp_correlation_bl = xrc.XRCCTRL(self, "vp_correlation_bl")
+        self.vp_correlation_br = xrc.XRCCTRL(self, "vp_correlation_br")
+        self.main_buttons = xrc.XRCCTRL(self, "main_buttons")
+        self.scr_win_right = xrc.XRCCTRL(self, "scr_win_right")
 
 
 
@@ -340,6 +377,7 @@ class xrcpnl_tab_correlation(wx.Panel):
         self.dr_step_cntrl = xrc.XRCCTRL(self, "dr_step_cntrl")
         self.dpx_step_cntrl = xrc.XRCCTRL(self, "dpx_step_cntrl")
         self.btn_reset_correlation = xrc.XRCCTRL(self, "btn_reset_correlation")
+        self.btn_multi_correlation = xrc.XRCCTRL(self, "btn_multi_correlation")
         self.btn_export = xrc.XRCCTRL(self, "btn_export")
 
 
@@ -1622,6 +1660,93 @@ b\xeb\x85\x9f\xb6B\x1d\x0cK\x17\xac\xf0\x12\xfe\xa0\xe5\xee\xe03\xb1\xfa\
     wx.MemoryFSHandler.AddFile('XRC/dialog_acq/dialog_acq_xrc', bytearray(dialog_acq_xrc.encode('utf-8')))
     wx.MemoryFSHandler.AddFile('XRC/dialog_acq/______img_icon_ico_acqui_png', bytearray(______img_icon_ico_acqui_png))
     __res.Load('memory:XRC/dialog_acq/dialog_acq_xrc')
+
+    dialog_correlation_xrc = u'''\
+<?xml version="1.0" ?><resource xmlns="http://www.wxwidgets.org/wxxrc" class="wxFrame" version="2.5.3.0">
+  <object class="wxDialog" name="fr_correlation">
+    <object class="wxBoxSizer">
+      <object class="sizeritem">
+        <object class="ViewportGrid" name="pnl_correlaton_grid">
+          <object class="MicroscopeViewport" name="vp_correlation_tl">
+            <fg>#BFBFBF</fg>
+            <bg>#000000</bg>
+            <XRCED>
+              <assign_var>1</assign_var>
+            </XRCED>
+          </object>
+          <object class="MicroscopeViewport" name="vp_correlation_tr">
+            <fg>#BFBFBF</fg>
+            <bg>#000000</bg>
+            <XRCED>
+              <assign_var>1</assign_var>
+            </XRCED>
+          </object>
+          <object class="MicroscopeViewport" name="vp_correlation_bl">
+            <fg>#BFBFBF</fg>
+            <bg>#000000</bg>
+            <XRCED>
+              <assign_var>1</assign_var>
+            </XRCED>
+          </object>
+          <object class="MicroscopeViewport" name="vp_correlation_br">
+            <fg>#BFBFBF</fg>
+            <bg>#000000</bg>
+            <XRCED>
+              <assign_var>1</assign_var>
+            </XRCED>
+          </object>
+          <XRCED>
+            <assign_var>1</assign_var>
+          </XRCED>
+        </object>
+        <option>1</option>
+        <flag>wxEXPAND</flag>
+      </object>
+      <object class="sizeritem">
+        <object class="wxPanel">
+          <object class="wxBoxSizer">
+            <object class="sizeritem">
+              <object class="wxPanel" name="main_buttons">
+                <size>400,-1</size>
+                <fg>#DDDDDD</fg>
+                <bg>#4D4D4D</bg>
+              </object>
+              <flag>wxEXPAND</flag>
+            </object>
+            <object class="sizeritem">
+              <object class="wxScrolledWindow" name="scr_win_right">
+                <size>400,-1</size>
+                <bg>#333333</bg>
+                <style>wxVSCROLL</style>
+                <XRCED>
+                  <assign_var>1</assign_var>
+                </XRCED>
+              </object>
+              <option>1</option>
+              <flag>wxEXPAND</flag>
+              <minsize>400,400</minsize>
+            </object>
+            <orient>wxVERTICAL</orient>
+          </object>
+          <size>400,-1</size>
+          <bg>#333333</bg>
+          <style>wxBORDER_NONE</style>
+        </object>
+        <flag>wxEXPAND</flag>
+      </object>
+    </object>
+    <title>Multi Point Correlation</title>
+    <bg>#000000</bg>
+    <font>
+      <size>9</size>
+      <sysfont>wxSYS_DEFAULT_GUI_FONT</sysfont>
+    </font>
+    <style>wxDEFAULT_DIALOG_STYLE|wxRESIZE_BORDER</style>
+  </object>
+</resource>'''
+
+    wx.MemoryFSHandler.AddFile('XRC/dialog_correlation/dialog_correlation_xrc', bytearray(dialog_correlation_xrc.encode('utf-8')))
+    __res.Load('memory:XRC/dialog_correlation/dialog_correlation_xrc')
 
     dialog_overview_acq_xrc = u'''\
 <?xml version="1.0" ?><resource xmlns="http://www.wxwidgets.org/wxxrc" class="wxFrame" version="2.5.3.0">
@@ -3591,6 +3716,18 @@ u\xb5\x17\x8a\x0c\xe7\xc1\xb6w\x88\x1c\x954\xf4\xc1\xd1\x0f\x96\xdeN>1M\
                             <object class="sizeritem">
                               <object class="ImageTextButton" name="btn_reset_correlation">
                                 <label>Reset Correlation Data</label>
+                                <height>24</height>
+                                <XRCED>
+                                  <assign_var>1</assign_var>
+                                </XRCED>
+                              </object>
+                              <flag>wxTOP</flag>
+                              <border>12</border>
+                              <option>0</option>
+                            </object>
+                            <object class="sizeritem">
+                              <object class="ImageTextButton" name="btn_multi_correlation">
+                                <label>Multi Point Correlation</label>
                                 <height>24</height>
                                 <XRCED>
                                   <assign_var>1</assign_var>

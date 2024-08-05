@@ -426,6 +426,18 @@
                               <border>12</border>
                               <option>0</option>
                             </object>
+                            <object class="sizeritem">
+                              <object class="ImageTextButton" name="btn_multi_correlation">
+                                <label>Multi Point Correlation</label>
+                                <height>24</height>
+                                <XRCED>
+                                  <assign_var>1</assign_var>
+                                </XRCED>
+                              </object>
+                              <flag>wxTOP</flag>
+                              <border>12</border>
+                              <option>0</option>
+                            </object>
                             <XRCED>
                               <assign_var>1</assign_var>
                             </XRCED>

@@ -94,6 +94,8 @@ class CorrelationController(object):
         self._tab = tab
         self._viewports = viewports
 
+        self._points: dict = {}
+
         # disable if no streams are present
         self._tab_data_model.streams.subscribe(self._on_correlation_streams_change, init=True)
         self._tab_data_model.streams.subscribe(self._update_correlation_cmb, init=True)
@@ -118,6 +120,7 @@ class CorrelationController(object):
 
         # reset correlation data
         self._panel.btn_reset_correlation.Bind(wx.EVT_BUTTON, self.reset_correlation_pressed)
+        self._panel.btn_multi_correlation.Bind(wx.EVT_BUTTON, self.multi_correlation_pressed)
 
         # enable correlation controls
         self._panel.ctrl_enable_correlation.SetValue(True) # enable by default
@@ -277,7 +280,49 @@ class CorrelationController(object):
 
             # move selected stream to position
             self._move_stream_to_pos(p_pos)
+        # if control is pressed,
+        elif evt.ControlDown() and self.correlation_enabled():
+            logging.warning("Control is pressed")
+            logging.warning("MULTI POINT CORRELATION")
 
+
+            # get coordinate in image
+            # get zindex for FM streams
+            # store in dict
+
+            pos = evt.GetPosition()
+            p_pos = active_canvas.view_to_phys(pos, active_canvas.get_half_buffer_size())
+            s = self._tab_data_model.selected_stream.value
+            logging.debug(f"control pressed, mouse_pos: {pos}, phys_pos: {p_pos}")
+            s_bbox = s.getBoundingBox()
+            shape = s.raw[0].shape
+            logging.debug(f"shape: {shape}, bbox: {s_bbox}")
+            from odemis.util import is_point_in_rect
+            if not is_point_in_rect(p_pos, s_bbox):
+                logging.warning("Point outside bounding box")
+                return
+
+            zIndex = 0
+
+            if hasattr(s, "zIndex"):
+                z_index = s.zIndex
+                shape = shape[1:]
+            logging.debug(f"zIndex: {zIndex}")
+
+
+            # convert from phyiscal to image coordinates
+            # get position in bounding box
+            x = int((p_pos[0] - s_bbox[0]) / (s_bbox[2] - s_bbox[0]) * shape[1])
+            y = int((p_pos[1] - s_bbox[1]) / (s_bbox[3] - s_bbox[1]) * shape[0])
+            logging.debug(f"image pos: {x}, {y}")
+            
+
+            # store in dict
+            if s not in self._points:
+                self._points[s] = []
+            self._points[s].append((x, y, zIndex))
+            logging.debug(f"points: {self._points}")
+            
         elif self._tab_data_model.tool.value == guimod.TOOL_RULER:
             logging.debug(f"Ruler is active, passing event to gadget overlay")
             active_canvas.gadget_overlay.on_left_down(evt)  # ruler is active, pass event to ruler
@@ -430,3 +475,112 @@ class CorrelationController(object):
 
         # move the stream using the correlation position offset
         self._move_stream(dx=dx, dy=dy, dr=0, dpx=0)
+
+    def multi_correlation_pressed(self, evt: wx.Event) -> None:
+        """correlate multiple streams together"""
+
+        logging.warning("Multi-correlation not implemented yet")
+
+        # self.multi_correlation_controller = MultiCorrelationController(
+        #     self._tab_data_model, self._tab
+        # )
+
+        # das = self.multi_correlation_controller.open_acquisition_dialog()
+
+
+from odemis.gui.main_xrc import xrcfr_correlation
+from odemis.gui.conf import get_acqui_conf, util
+
+
+class CorrelationDialog(xrcfr_correlation):
+    """
+    Class used to control the overview acquisition dialog
+    The data acquired is stored in a file, with predefined name, available on
+      .filename and it is opened (as pyramidal data) in .data .
+    """
+    def __init__(self, parent, orig_tab_data):
+        xrcfr_correlation.__init__(self, parent)
+
+        self.conf = get_acqui_conf()
+
+        # True when acquisition occurs
+        self.acquiring = False
+        self.data = None
+
+        self._main_data_model = orig_tab_data.main
+
+        # duplicate the interface, but with only one view
+        # self._tab_data_model = self.duplicate_tab_data_model(orig_tab_data)
+
+import logging
+
+import wx
+
+from odemis.gui.preset import preset_as_is, get_global_settings_entries, \
+    get_local_settings_entries, apply_preset
+
+class MultiCorrelationController(object):
+    """ controller to handle high-res image acquisition of the overview for the cryo-secom
+    """
+
+    def __init__(self, tab_data, tab):
+        """
+        tab_data (MicroscopyGUIData): the representation of the microscope GUI
+        tab: (Tab): the tab which should show the data
+        """
+        self._tab_data_model = tab_data
+        self._main_data_model = tab_data.main
+        self._tab = tab
+
+    def open_acquisition_dialog(self):
+        """
+        return None or a list of DataArrays: the acquired images. None if it was
+          cancelled.
+        """
+        # Indicate we are acquiring, especially important for the SEM which
+        # need to get the external signal to not scan (cf MicroscopeController)
+        self._main_data_model.is_acquiring.value = True
+
+        # save the original settings
+        # settingsbar_controller = self._tab.settingsbar_controller
+        # orig_entries = get_global_settings_entries(settingsbar_controller)
+        # for sc in self._tab.streambar_controller.stream_controllers:
+        #     orig_entries += get_local_settings_entries(sc)
+        # orig_settings = preset_as_is(orig_entries)
+        # settingsbar_controller.pause()
+        # settingsbar_controller.enable(False)
+
+        # pause all the live acquisitions
+        streambar_controller = self._tab.streambar_controller
+        streambar_controller.pauseStreams()
+        streambar_controller.pause()
+        streambar_controller.enable(False)
+
+        # create the dialog
+        try:
+            acq_dialog = CorrelationDialog(
+                self._tab.main_frame, self._tab_data_model)
+            parent_size = [v * 0.77 for v in self._tab.main_frame.GetSize()]
+
+            acq_dialog.SetSize(parent_size)
+            acq_dialog.Center()
+            action = acq_dialog.ShowModal()
+        except Exception:
+            logging.exception("Failed to create acquisition dialog")
+            raise
+        finally:
+            # apply_preset(orig_settings)
+
+            # settingsbar_controller.enable(True)
+            # settingsbar_controller.resume()
+
+            streambar_controller.enable(True)
+            streambar_controller.resume()
+
+            self._main_data_model.is_acquiring.value = False
+            acq_dialog.Destroy()
+
+        if action == wx.ID_OPEN:
+            return acq_dialog.data
+        else:
+            return None
