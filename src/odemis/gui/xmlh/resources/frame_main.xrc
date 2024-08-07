@@ -183,6 +183,13 @@
               <assign_var>1</assign_var>
             </XRCED>
           </object>
+          <object class="wxMenuItem" name="menu_item_import_from_maps">
+          <label>Import Features from Maps</label>
+          <enabled>1</enabled>
+          <XRCED>
+            <assign_var>1</assign_var>
+          </XRCED>
+        </object>
         </object>
         <object class="wxMenuItem" name="menu_item_bugreport">
           <label>Report a problem...</label>

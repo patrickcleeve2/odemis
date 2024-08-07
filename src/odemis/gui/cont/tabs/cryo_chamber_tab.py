@@ -90,6 +90,13 @@ class CryoChamberTab(Tab):
         self.txt_projectpath = self.panel.txt_projectpath
         self.btn_load_project.Hide()
 
+        # import wx
+        app = wx.GetApp() # TODO: there should be a local version of this...?
+        main_frame = app.main_frame
+        main_frame.Bind(wx.EVT_MENU, self._add_feature_position_from_maps, 
+                        id=main_frame.menu_item_import_from_maps.GetId())
+        main_frame.menu_item_import_from_maps.Enable(True)
+
         # Create new project directory on starting the GUI
         self._create_new_dir()
         self._cancel = False
@@ -219,6 +226,21 @@ class CryoChamberTab(Tab):
             self._vac_sample_target_tmp = VigilantAttributeConnector(main_data.sample_thermostat.targetTemperature,
                                                                      self.panel.ctrl_sample_target_tmp,
                                                                      events=wx.EVT_COMMAND_ENTER)
+
+
+
+
+
+    def _add_feature_position_from_maps(self, evt):
+
+        from odemis.gui.win.acquisition import LoadMapsProjectDirectoryDialog
+
+        import os
+        path = LoadMapsProjectDirectoryDialog(self.panel, os.getcwd())
+
+        logging.warning(f"Loading MAPS project from: {path}")
+
+        self.tab_data_model._add_feature_position_from_maps()
 
     def _get_overview_view(self):
         overview_view = next(

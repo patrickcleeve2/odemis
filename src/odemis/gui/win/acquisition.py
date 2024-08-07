@@ -1389,3 +1389,23 @@ def LoadProjectFileDialog(parent, projectname):
 
     # project path have been selected...
     return dialog.GetPath()
+
+def LoadMapsProjectDirectoryDialog(parent, projectname):
+    """
+    parent (wxframe): parent window
+    projectname (string): project name to propose by default
+    return (string or none): the project directory name to load (or the none if the user cancelled)
+    """
+    # current project name
+    dialog = wx.DirDialog(parent,
+                           message="Choose a project directory to load",
+                           defaultPath=projectname,
+                           style=wx.DD_DEFAULT_STYLE | wx.DD_DIR_MUST_EXIST,
+                           )
+
+    # Show the dialog and check whether is was accepted or cancelled
+    if dialog.ShowModal() != wx.ID_OK:
+        return None
+
+    # project path have been selected...
+    return dialog.GetPath()

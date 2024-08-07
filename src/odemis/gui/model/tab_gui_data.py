@@ -220,7 +220,7 @@ class CryoGUIData(MicroscopyGUIData):
         if not main.is_viewer and main.role not in ("enzel", "meteor", "mimas"):
             raise ValueError(
                 "Expected a microscope role of 'enzel', 'meteor', or 'mimas' but found it to be %s." % main.role)
-        super().__init__(main)
+        super().__init__(main) 
 
     def add_new_feature(self, pos_x, pos_y, pos_z=None, f_name=None):
         """
@@ -235,6 +235,45 @@ class CryoGUIData(MicroscopyGUIData):
         self.main.features.value.append(feature)
         self.main.currentFeature.value = feature
         return feature
+
+    # maps/autolamella position
+    # TODO: convert from raw coordinates if autolamella
+    def _add_feature_position_from_maps(self, initial_position=None, name: str = None):
+
+        # TODO: open file dialog to select the MapsDirectory
+        # TODO: also load the SEM MAP?
+
+        from odemis import model
+        from odemis.acq.feature import CryoFeature, MicroscopePostureManager
+
+        microscope = model.getMicroscope()
+        pm = MicroscopePostureManager(microscope)
+        # stage = model.getComponent(role="stage")
+        # stage_bare = model.getComponent(role="stage-bare")
+        linked_yz = model.getComponent(name="Linked YZ")
+
+        xs = [-100e-6, 0, 100e-6]
+
+        for x in xs:
+
+            initial_position = {'x': x, 'y': 0.0, 'z': 0.0, 'rx': 0.0, 'rz': 0.0}
+
+            # convert to FM position
+            fm_pos = pm._transformFromSEMToMeteor(initial_position)
+            logging.warning(f"feature position: (fm-bare): {fm_pos}")
+
+            # convert to fm reference position
+            fm_pos_fm = linked_yz._convertPosFromdep(pos_dep=[fm_pos["y"], fm_pos["z"]])
+            logging.warning(f"feature position (fm-fm): {fm_pos_fm}")
+
+            # create feature
+            pos_z = self.main.focus.position.value['z'] # TODO: this will be the deactive position if imported at SEM?
+            f_pos = {"x": fm_pos["x"], "y": fm_pos_fm[0], "z": pos_z} # TODO: this should have z-data, and obj-z
+            feature = CryoFeature(name="Feature 1", x=f_pos["x"], y=f_pos["y"], z=f_pos["z"])
+            logging.warning(f"feature pos: {feature.pos.value}")
+
+            # add to feature list?
+            self.add_new_feature(f_pos["x"], f_pos["y"], f_pos["z"], name)
 
     # Todo: find the right margin
     ATOL_FEATURE_POS = 0.1e-3  # m
