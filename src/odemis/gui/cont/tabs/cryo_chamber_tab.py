@@ -90,7 +90,6 @@ class CryoChamberTab(Tab):
         self.txt_projectpath = self.panel.txt_projectpath
         self.btn_load_project.Hide()
 
-        # import wx
         app = wx.GetApp() # TODO: there should be a local version of this...?
         main_frame = app.main_frame
         main_frame.Bind(wx.EVT_MENU, self._add_feature_position_from_maps, 
