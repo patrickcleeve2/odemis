@@ -162,52 +162,23 @@ class CryoFeatureOverlay(StagePointSelectOverlay, DragMixin):
                         "z": self.cnvs.view._stage.position.value["z"],
                     }
                     self.tab_data.add_new_feature(stage_pos=new_pos)
+
+                    from odemis import model
                     self._selected_tool_va.value = TOOL_NONE
+                    stage = model.getComponent(role="stage")
+                    stage_bare = model.getComponent(role="stage-bare")
 
-                    # logging.warning(f"Selected feature pos: {p_pos}, view pos: {v_pos}")
-                    # stage = self.cnvs.view._stage
+                    print(f"current stage-fm: {stage.position.value}")
+                    print(f"current stage-bare:  {stage_bare.position.value}")
 
-                    # # assumption is that the z position for stage-fm does not change as we move
-                    # new_pos = {
-                    #     "x": p_pos[0],
-                    #     "y": p_pos[1],
-                    #     "z": stage.position.value["z"],
-                    # }
-                    # linked_new_pos = {"x": new_pos["y"], "y": new_pos["z"]}
+                    # convert the feature position from stage to stage-bare
+                    convert_stage = model.getComponent(name="Linked YZ")
+                    f_stage_bare_pos = convert_stage.convert_to_dependant_position(new_pos)
 
-                    # logging.warning(f"new feature created at {new_pos}")
-                    # logging.warning(f"linked new feature created at {linked_new_pos}")
-
-                    # # convert stage position to stage bare position
-                    # from odemis import model
-
-                    # stage_bare = model.getComponent(role="stage-bare")
-                    # linked_yz = model.getComponent(name="Linked YZ")
-
-                    # logging.warning(f"stage-bare:  {stage_bare.position.value}")
-                    # logging.warning(f"stage-fm: {stage.position.value}")
-                    # logging.warning(f"linked-yz: {linked_yz.position.value}")
-
-                    # # convert yz to bare coordinates
-                    # converted_pos = linked_yz._get_pos_vector(
-                    #     linked_new_pos
-                    # )  # this is to bare coordinates
-                    # converted_pos["x"] = new_pos["x"]  # update x position
-                    # logging.warning(f"converted linked pos: {converted_pos}")
-
-                    # # update stage bare position
-                    # new_stage_bare_pos = (
-                    #     stage_bare.position.value
-                    # )  # get rx, rz from current stage bare position (orientation)
-                    # new_stage_bare_pos.update(converted_pos)  # update x, y, z position
-                    # logging.warning(f"new projected stage-bare:  {new_stage_bare_pos}")
-
-                    # self.tab_data.add_new_feature(
-                    #     p_pos[0], p_pos[1], stage_bare_pos=new_stage_bare_pos
-                    # )
-                    # feature.position.value = new_stage_bare_pos # 5d stage-bare position
-
-                    # TODO: convert to 3D position??
+                    # update stage bare orientation
+                    new_stage_bare_pos = stage_bare.position.value  # get rx, rz (orientation)
+                    new_stage_bare_pos.update(f_stage_bare_pos)     # update x, y, z position
+                    print(f"feature stage-bare (+orientation):  {new_stage_bare_pos}")
 
             else:
                 if feature:

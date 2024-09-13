@@ -720,6 +720,8 @@ class FeatureOverviewView(FeatureView):
         self.mpp.value = 10e-6
         self.mpp.range = (1e-10, 1)
 
+        # add stage-bare, convert-stage here, so we can convert the stage coordinates?
+
     def _on_stage_pos(self, pos):
         # we DON'T want to recenter the viewports whenever the stage moves
         # (contrarily to the standard MicroscopeView/FeatureView)
