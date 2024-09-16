@@ -29,6 +29,7 @@ from odemis import model
 
 try:
     from fastem_calibrations.autofocus_multiprobe import AutofocusMultiprobe
+    from fastem_calibrations.autofocus_sem import AutofocusSEM
     from fastem_calibrations.autostigmation import Autostigmation
     from fastem_calibrations.cell_translation import CellTranslation
     from fastem_calibrations.dark_offset_correction import DarkOffsetCorrection
@@ -63,6 +64,7 @@ except ImportError as err:
     ScanAmplitude = None
     CellTranslation = None
     Autostigmation = None
+    AutofocusSEM = None
 
     fastem_calibrations = False
 
@@ -88,9 +90,11 @@ class Calibrations(Enum):
     SCAN_AMPLITUDE_FINAL = ScanAmplitude
     CELL_TRANSLATION = CellTranslation
     AUTOSTIGMATION = Autostigmation
+    SEM_AUTOFOCUS = AutofocusSEM
 
 
-def align(scanner, multibeam, descanner, detector, stage, ccd, beamshift, det_rotator, calibrations, stage_pos=None):
+def align(scanner, multibeam, descanner, detector, stage, ccd, beamshift, det_rotator,
+          se_detector, ebeam_focus, calibrations, stage_pos=None, spot_grid_thresh=0.5):
     """
     Start a calibration task for a given list of calibrations.
 
@@ -102,10 +106,14 @@ def align(scanner, multibeam, descanner, detector, stage, ccd, beamshift, det_ro
             aligned with the x and y axes of the multiprobe and the multibeam scanner. Must have x, y and z axes.
     :param ccd: (model.DigitalCamera) A camera object of the diagnostic camera.
     :param beamshift: (tfsbc.BeamShiftController) Component that controls the beamshift deflection.
-    :param det_rotator: (actuator) K-mirror controller. Must have a rotational (rz) axis.
+    :param det_rotator: (model.Actuator) K-mirror controller. Must have a rotational (rz) axis.
+    :param se_detector: (model.Detector) single beam secondary electron detector.
+    :param ebeam_focus: (model.Actuator) SEM focus control.
     :param calibrations: (list[Calibrations]) List of calibrations that should be run.
     :param stage_pos: (float, float) Stage position where the calibration should be run. If None,
                       the calibration is run at the current stage position.
+    :param spot_grid_thresh: (0<float<=1) Relative threshold on the minimum intensity of spots in the
+        diagnostic camera image, calculated as `max(image) * spot_grid_thresh`.
 
     :returns: (ProgressiveFuture) Alignment future object, which can be cancelled.
     """
@@ -118,7 +126,7 @@ def align(scanner, multibeam, descanner, detector, stage, ccd, beamshift, det_ro
 
     # Create a task that runs the calibration and alignments.
     task = CalibrationTask(f, scanner, multibeam, descanner, detector, stage, ccd, beamshift, det_rotator,
-                           calibrations, stage_pos)
+                           se_detector, ebeam_focus, calibrations, stage_pos, spot_grid_thresh)
 
     f.task_canceller = task.cancel  # lets the future know how to cancel the task.
 
@@ -145,7 +153,7 @@ class CalibrationTask(object):
     """
 
     def __init__(self, future, scanner, multibeam, descanner, detector, stage, ccd, beamshift, det_rotator,
-                 calibrations, stage_pos):
+                 se_detector, ebeam_focus, calibrations, stage_pos, spot_grid_thresh):
         """
         :param future: (ProgressiveFuture) Acquisition future object, which can be cancelled.
                        (Exception or None): Exception raised during the calibration or None.
@@ -158,10 +166,14 @@ class CalibrationTask(object):
             aligned with the x and y axes of the multiprobe and the multibeam scanner. Must have x, y and z axes.
         :param ccd: (model.DigitalCamera) A camera object of the diagnostic camera.
         :param beamshift: (tfsbc.BeamShiftController) Component that controls the beamshift deflection.
-        :param det_rotator: (actuator) K-mirror controller. Must have a rotational (rz) axis.
+        :param det_rotator: (model.Actuator) K-mirror controller. Must have a rotational (rz) axis.
+        :param se_detector: (model.Detector) single beam secondary electron detector.
+        :param ebeam_focus: (model.Actuator) SEM focus control.
         :param calibrations: (list[Calibrations]) List of calibrations that should be run.
         :param stage_pos: (float, float) Stage position where the calibration should be run in meter. If None,
                       the calibration is run at the current stage position.
+        :param spot_grid_thresh: (0<float<=1) Relative threshold on the minimum intensity of spots in the
+            diagnostic camera image, calculated as `max(image) * spot_grid_thresh`.
         """
         self.asm_config = None
         self._scanner = scanner
@@ -173,10 +185,13 @@ class CalibrationTask(object):
         self._ccd = ccd
         self._beamshift = beamshift
         self._det_rotator = det_rotator
+        self._se_detector = se_detector
+        self._ebeam_focus = ebeam_focus
         self._future = future
 
         self.calibrations = calibrations
         self.stage_pos = stage_pos
+        self.spot_grid_thresh = spot_grid_thresh
 
         # List of calibrations to be executed. Used for progress update.
         self._calibrations_remaining = set(calibrations)
@@ -218,7 +233,9 @@ class CalibrationTask(object):
             "mppc": self._detector,
             "stage": self._stage,
             "diagnostic-ccd": self._ccd,
-            "det-rotator": self._det_rotator
+            "det-rotator": self._det_rotator,
+            "se-detector": self._se_detector,
+            "ebeam-focus": self._ebeam_focus,
         }
 
         # Get the estimated time for all requested calibrations.
@@ -245,7 +262,7 @@ class CalibrationTask(object):
                 logging.debug("Starting calibration %s", calib_cls.__name__)
                 calib_runner = calib_cls(components)
                 # TODO return a sub-future when implemented for calibrations
-                self.run_calibration(calib_runner)
+                self.run_calibration(calib_runner, spot_grid_thresh=self.spot_grid_thresh)
 
                 # def _pass_future_progress(sub_f, start, end):
                 #     f.set_progress(start, end)
@@ -285,11 +302,11 @@ class CalibrationTask(object):
 
         return self.asm_config
 
-    def run_calibration(self, calibration):
+    def run_calibration(self, calibration, **kwargs):
         """
         Run a calibration.
         """
-        calibration.run()
+        calibration.run(**kwargs)
 
         # Store the calibrated settings in the ASM config.
         for component, va in calibration.updated_settings:

@@ -108,11 +108,13 @@ class MainGUIData(object):
         "lens-switch": "lens_switch",  # lens2 of SPARCv2. Supports EK if has FAV_POS_ACTIVE
         "spec-selector": "spec_sel",
         "spec-switch": "spec_switch",
+        "spec-ded-aligner": "spec_ded_aligner",
         "pcd-selector": "pcd_sel",
         "chamber": "chamber",
         "light": "light",
         "light-aligner": "light_aligner",  # for light in-coupler on SPARCv2
         "brightlight": "brightlight",
+        "brightlight-ext": "brightlight_ext",
         "backlight": "backlight",
         "filter": "light_filter",
         "cl-filter": "cl_filter",
@@ -173,6 +175,7 @@ class MainGUIData(object):
         self.light_aligner = None  # actuator to move/calibrate the light aligner mirror (SPARCv2)
         self.light = None  # epi-fluorescence light (SECOM/DELPHI)
         self.brightlight = None  # special light for white illumination (SECOM) or calibration (SPARC)
+        self.brightlight_ext = None  # external light for purple UV illumination, e.g. for FSLT (SPARCv2)
         self.backlight = None  # for dark field illumination (SECOM)
         self.light_filter = None  # emission light filter for SECOM/output filter for SPARC
         self.cl_filter = None  # light filter for SPARCv2 on the CL components
@@ -189,6 +192,7 @@ class MainGUIData(object):
         self.spectrograph = None  # actuator to change the wavelength/grating (on SPARCv2, it's directly on the optical path)
         self.spectrograph_ded = None  # spectrograph connected via an optical fiber (SPARCv2)
         self.spec_ded_focus = None  # focus on spectrograph dedicated (SPARCv2)
+        self.spec_ded_aligner = None  # special lens aligner for the FSLT (SPARCv2)
         self.monochromator = None  # 0D detector behind the spectrograph
         self.lens_mover = None  # actuator to align the lens1 (SPARCv2)
         self.lens_switch = None  # actuator to align the lens2 (SPARCv2)
@@ -372,6 +376,9 @@ class MainGUIData(object):
 
         self.hw_settings_config = get_hw_settings_config(self.role)
 
+        # Used by the MIMAS, but needs to be initialized as empty for the SECOM & cryo microscopes.
+        self.sample_centers: Dict[str, Tuple[float, float]] = {}  # sample name -> center position (x, y)
+
         # Set to True to request debug info to be displayed
         self.debug = model.BooleanVA(False)
         self.level = model.IntVA(0)  # Highest message level not seen by the user so far
@@ -383,6 +390,9 @@ class MainGUIData(object):
         # do directly access additional GUI information.
         self.tab = model.VAEnumerated(None, choices={None: ""})
 
+        # Indicate whether the gui is loaded as viewer
+        self.is_viewer = self.microscope is None
+
     def stopMotion(self):
         """
         Stops immediately every axis
@@ -391,7 +401,7 @@ class MainGUIData(object):
             return
 
         ts = []
-        for c in self.microscope.children.value:
+        for c in self.microscope.alive.value:
             # Actuators have an .axes roattribute
             if not isinstance(c.axes, Mapping):
                 continue
@@ -458,7 +468,6 @@ class CryoMainGUIData(MainGUIData):
 
     def __init__(self, microscope):
         super().__init__(microscope)
-        self.sample_centers : Dict[str, Tuple[float, float]] = {}  # sample name -> center position (x, y)
 
         # Controls the stage movement based on the imaging mode
         self.posture_manager = MicroscopePostureManager(microscope)

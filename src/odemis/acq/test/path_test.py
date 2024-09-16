@@ -55,8 +55,9 @@ SPARC2_EXT_SPEC_CONFIG = CONFIG_PATH + "sim/sparc2-ext-spec-sim.odm.yaml"
 SECOM_FLIM_CONFIG = CONFIG_PATH + "sim/secom-flim-sim.odm.yaml"
 SPARC2_POLARIZATIONANALYZER_CONFIG = CONFIG_PATH + "sim/sparc2-ek-polarizer-sim.odm.yaml"
 SPARC2_4SPEC_CONFIG = CONFIG_PATH + "sim/sparc2-4spec-sim.odm.yaml"
-SPARC2_FPLM_CONFIG = CONFIG_PATH + "sim/sparc2-fplm-sim.odm.yaml"
-SPARC2_FSLM_CONFIG = CONFIG_PATH + "sim/sparc2-fslm-sim.odm.yaml"
+SPARC2_FPLM_CONFIG = CONFIG_PATH + "sim/sparc2-fplm-sim.odm.yaml"  # Fiber-coupled Photoluminescence module
+SPARC2_FSLM_CONFIG = CONFIG_PATH + "sim/sparc2-fslm-sim.odm.yaml"  # Free Space Light Module
+SPARC2_FSLT_CONFIG = CONFIG_PATH + "sim/sparc2-fslt-sim.odm.yaml"  # Free Space Light Tunnel
 MIMAS_CONFIG = CONFIG_PATH + "sim/mimas-sim.odm.yaml"
 
 
@@ -1310,6 +1311,64 @@ class Sparc2SpecSwitchTestCase(unittest.TestCase):
         testing.assert_pos_almost_equal(self.spec_switch.position.value, spec_sw_md[model.MD_FAV_POS_DEACTIVE])
 
 
+class Sparc2TunnelLensAlignerTestCase(unittest.TestCase):
+    """
+    Tests of a (simulated) SPARC2 with a lens-aligner using a Free Space Light Tunnel (FSLT).
+    """
+    @classmethod
+    def setUpClass(cls):
+        testing.start_backend(SPARC2_FSLT_CONFIG)
+        # Microscope component
+        cls.microscope = model.getComponent(role="sparc2")
+        # Components for the AR alignment mode
+        cls.spectrograph = model.getComponent(role="spectrograph")
+        cls.lens_switch = model.getComponent(role="lens-switch")
+        cls.lens_mover = model.getComponent(role="lens-mover")
+        cls.slit = model.getComponent(role="slit-in-big")
+        # Components for the tunnel-lens-align alignment mode
+        cls.spectrograph_ext = model.getComponent(role="spectrograph-dedicated")
+        cls.brightlight_ext = model.getComponent(role="brightlight-ext")
+        cls.spec_selector = model.getComponent(role="spec-selector")
+        cls.spec_ded_aligner = model.getComponent(role="spec-ded-aligner")
+        cls.spec_ded_det_selector = model.getComponent(role="spec-ded-det-selector")
+        cls.optmngr = path.OpticalPathManager(cls.microscope)
+
+    @classmethod
+    def tearDownClass(cls):
+        del cls.optmngr  # To garbage collect it
+
+    def test_set_path(self):
+        """
+        Test switch to the tunnel-lens-align mode and verify selected components are
+        configured with the right settings.
+        """
+        # Start by going to a different mode: use ar
+        self.optmngr.setPath("ar").result()
+        # Assert that actuator was moved according to mode given
+        assert_pos_as_in_mode(self, self.lens_switch, "ar")
+        assert_pos_as_in_mode(self, self.lens_mover, "ar")
+        assert_pos_as_in_mode(self, self.slit, "ar")
+        assert_pos_as_in_mode(self, self.spectrograph, "ar")
+
+        self.optmngr.setPath("tunnel-lens-align").result()
+
+        # assert that the specified actuators were moved according to mode given
+        self.assertEqual(self.spectrograph_ext.position.value["grating"], 2)  # mirror
+        self.assertEqual(self.spectrograph_ext.position.value["wavelength"], 0.0)
+        self.assertEqual(self.spectrograph_ext.position.value["slit-in"], self.spectrograph_ext.axes["slit-in"].range[1])
+        assert_pos_as_in_mode(self, self.spec_ded_aligner, "tunnel-lens-align")
+
+        # Test the spec-focus-ext
+        # first move to a different grating and wavelength, to make it harder
+        self.spectrograph_ext.moveAbsSync({"grating": 1, "wavelength": 500e-9})
+
+        self.optmngr.setPath("spec-focus-ext").result()
+        # assert that the specified actuators were moved according to mode given
+        self.assertEqual(self.spectrograph_ext.position.value["grating"], 1)  # grating should not be changed
+        self.assertEqual(self.spectrograph_ext.position.value["wavelength"], 0.0)
+        self.assertEqual(self.spectrograph_ext.position.value["slit-in"], self.spectrograph_ext.axes["slit-in"].range[0])
+
+
 class SecomPathTestCase(unittest.TestCase):
     """
     Tests to be run with a (simulated) SECOM
@@ -1331,6 +1390,11 @@ class SecomPathTestCase(unittest.TestCase):
     @classmethod
     def tearDownClass(cls):
         del cls.optmngr  # To garbage collect it
+
+    def setUp(self):
+        # Set the fan speed to on, as we expect in the tests, because the OPM uses the
+        # fan speed at init to use with "best quality".
+        self.ccd.fanSpeed.value = 1
 
     def test_set_acq_quality(self):
         sems = stream.SEMStream("test sem", self.sed, self.sed.data, self.ebeam)

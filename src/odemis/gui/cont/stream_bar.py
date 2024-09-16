@@ -32,6 +32,7 @@ import time
 import wx
 
 import odemis.acq.stream as acqstream
+import odemis.gui.conf.file
 import odemis.gui.model as guimodel
 from odemis import model
 from odemis.acq.stream_settings import StreamSettingsConfig
@@ -1201,8 +1202,7 @@ class SecomStreamsController(StreamBarController):
     """
 
     def __init__(self, *args, **kwargs):
-        dir = os.path.join(get_home_folder(), u".config/odemis")
-        file_path = os.path.abspath(os.path.join(dir, f"stream_settings.json"))
+        file_path = os.path.abspath(os.path.join(odemis.gui.conf.file.CONF_PATH, "stream_settings.json"))
         max_entries = 10  # Maximum number most recent settings to display
         # Initialize a file to save acquired streams
         self.stream_settings = StreamSettingsConfig(file_path, max_entries)
@@ -1759,6 +1759,7 @@ class SparcStreamsController(StreamBarController):
 
         axes = {"wavelength": ("wavelength", spg),
                 "grating": ("grating", spg),
+                "iris-in": ("iris-in", spg),
                 "slit-in": ("slit-in", spg),
                }
 
@@ -1777,6 +1778,7 @@ class SparcStreamsController(StreamBarController):
             detector,
             detector.data,
             main_data.ebeam,
+            main_data.light,
             sstage=main_data.scan_stage,
             opm=self._main_data_model.opm,
             axis_map=axes,
@@ -1814,6 +1816,7 @@ class SparcStreamsController(StreamBarController):
 
         axes = {"wavelength": ("wavelength", spectrograph),
                 "grating": ("grating", spectrograph),
+                "iris-in": ("iris-in", spectrograph),
                 "slit-in": ("slit-in", spectrograph),
                 "filter": ("band", main_data.light_filter),
                 }
@@ -1842,7 +1845,7 @@ class SparcStreamsController(StreamBarController):
 
     def addTemporalSpectrum(self):
         """
-        Create a temporal spectrum stream and add to to all compatible viewports
+        Create a temporal spectrum stream and add to all compatible viewports
         """
 
         main_data = self._main_data_model
@@ -1857,6 +1860,7 @@ class SparcStreamsController(StreamBarController):
 
         axes = {"wavelength": ("wavelength", spg),
                 "grating": ("grating", spg),
+                "iris-in": ("iris-in", spg),
                 "slit-in": ("slit-in", spg)}
 
         axes = self._filter_axes(axes)
@@ -1897,6 +1901,7 @@ class SparcStreamsController(StreamBarController):
 
         axes = {"wavelength": ("wavelength", spg),
                 "grating": ("grating", spg),
+                "iris-in": ("iris-in", spg),
                 "slit-in": ("slit-in", spg),
                 "slit-monochromator": ("slit-monochromator", spg),
                }
@@ -2092,8 +2097,10 @@ class CryoAcquiredStreamsController(CryoStreamsController):
         self._feature_view.addStream(stream)
         sc = self._add_stream_cont(stream, show_panel=True, static=self.static_mode,
                                    view=self._feature_view)
+        sc.stream_panel.show_remove_btn(True)
         return sc
 
+    @call_in_wx_main
     def _on_current_feature_changes(self, feature):
         """
         Handle switching the acquired streams appropriate to the current feature

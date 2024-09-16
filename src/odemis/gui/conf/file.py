@@ -244,7 +244,10 @@ class AcquisitionConfig(Config):
         self.default.set("acquisition", "fn_ptn", u"{datelng}-{timelng}")
         self.default.set("acquisition", "fn_count", "0")
         self.default.set("acquisition", "overlap", "0.06")
-        self.default.set("acquisition", "autostig_period", "5")
+        self.default.set("acquisition", "autostig_period", "5")  # unit: number of ROA acquisitions
+        self.default.set("acquisition", "autofocus_period", "5")  # unit: number of ROA acquisitions
+        # Relative threshold on the minimum intensity of spots.
+        self.default.set("acquisition", "spot_grid_threshold", "0.5")
 
         self.default.add_section("export")
         self.default.set("export", "last_path", ACQUI_PATH)
@@ -340,6 +343,22 @@ class AcquisitionConfig(Config):
     @autostig_period.setter
     def autostig_period(self, value):
         self.set("acquisition", "autostig_period", value)
+
+    @property
+    def autofocus_period(self):
+        return int(self.get("acquisition", "autofocus_period"))
+
+    @autofocus_period.setter
+    def autofocus_period(self, value):
+        self.set("acquisition", "autofocus_period", value)
+
+    @property
+    def spot_grid_threshold(self):
+        return float(self.get("acquisition", "spot_grid_threshold"))
+
+    @spot_grid_threshold.setter
+    def spot_grid_threshold(self, value):
+        self.set("acquisition", "spot_grid_threshold", value)
 
     @property
     def pj_last_path(self):

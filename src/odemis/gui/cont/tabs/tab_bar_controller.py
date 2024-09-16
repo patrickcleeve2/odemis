@@ -192,7 +192,10 @@ class TabBarController(TabController):
             if b not in buttons:
                 b.Hide()
 
-        if len(tabs) <= 1:  # No need for tab buttons at all
+        # The Odemis Viewer has Analysis and Correlation tabs. The Correlation tab is disabled
+        # by default and in this case hide the tab buttons panel. In general, hide the tab buttons
+        # panel if there is only 1 tab or no tabs.
+        if main_data.is_viewer or len(tabs) <= 1:
             main_frame.pnl_tabbuttons.Hide()
 
         return tabs, default_tab

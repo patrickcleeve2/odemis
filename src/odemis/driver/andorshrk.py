@@ -16,24 +16,24 @@ You should have received a copy of the GNU General Public License along with Ode
 '''
 # This is a driver for the Andor Shamrock & Kymera spectographs.
 
-from ctypes import *
 import ctypes
+import itertools
 import logging
 import math
-from typing import Optional, Dict
-
-from odemis import model
-import odemis
-from odemis.driver import andorcam2
-from odemis.model import isasync, CancellableThreadPoolExecutor, HwError
-from odemis import util
-from odemis.util import driver, to_str_escape
 import os
 import signal
 import sys
 import threading
 import time
-import itertools
+from ctypes import *
+from typing import Optional, Dict, List, Tuple, Union  # Must be after ctypes
+
+import odemis
+from odemis import model
+from odemis import util
+from odemis.driver import andorcam2
+from odemis.model import isasync, CancellableThreadPoolExecutor, HwError
+from odemis.util import driver, to_str_escape
 
 # Constants from ShamrockCIF.h
 ACCESSORYMIN = 0  # changed in the latest version (from 1->2)
@@ -276,6 +276,35 @@ SLIT_NAMES = {INPUT_SLIT_SIDE: "slit-in-side",  # Note: previously it was called
               OUTPUT_SLIT_DIRECT: "slit-out-direct",
              }
 
+# default names for the irises
+IRIS_NAMES = {
+    DIRECT_PORT: "iris-direct",
+    SIDE_PORT: "iris-side",
+}
+
+# Conversion factor from the opening values (in % from min to max opening) to the actual opening in m, roughly.
+# Experimentally, the full opening of the iris is ~20mm. Note the minimum opening is > 0 (there is still light).
+IRIS_OPENING_TO_M = 200e-6  # m, approximate
+IRIS_POS_MIN = 0
+IRIS_POS_MAX = 100
+
+def iris_hw_to_user(hw_value: int) -> float:
+    """
+    Convert the iris position as handled by the hardware (in percent) value to a user-friendly value.
+    :param hw_value: the hardware value (between 0 and 100)
+    :return: the iris opening in m (approximately)
+    """
+    return (hw_value + 1) * IRIS_OPENING_TO_M
+
+def iris_user_to_hw(user_value: float) -> int:
+    """
+    Convert the iris position from the user-friendly unit to value as used by the hardware (in percent)
+    :param user_value: the iris opening in m (approximately)
+    :return: the hardware value (between 0 and 100)
+    """
+    return int(round(user_value / IRIS_OPENING_TO_M)) - 1
+
+
 # The two values exported by the Odemis API for the flipper positions
 FLIPPER_TO_PORT = {0: DIRECT_PORT,
                    math.radians(90): SIDE_PORT}
@@ -295,47 +324,58 @@ class Shamrock(model.Actuator):
     it also work via the direct USB connection.
     Note: we don't handle changing turret (live).
     """
-    def __init__(self, name, role, device, camera=None, accessory=None,
-                 slitleds_settle_time=1e-3, slits=None,
-                 bands=None, rng=None,
-                 fstepsize=1e-6, drives_shutter=None, dependencies=None,
+    def __init__(self, name: str, role: str,
+                 device: Union[str, int],
+                 camera=None,
+                 accessory: Optional[str] = None,
+                 slitleds_settle_time: float = 1e-3,
+                 slits: Optional[Dict[int, Union[str, List[str]]]] = None,
+                 iris: Optional[Dict[int, str]] = None,
+                 bands: Optional[Dict[int, Union[List[float], str]]] = None,
+                 rng: Optional[Dict[str, Tuple[float, float]]] = None,
+                 fstepsize: float = 1e-6,
+                 drives_shutter: Optional[List[float]] = None,
+                 dependencies: Optional[Dict[str, model.HwComponent]] = None,
                  check_move: Optional[Dict[str, bool]] = None,
+                 _dll: Optional[ShamrockDLL] = None,
                  **kwargs):
         """
-        device (0<=int or str): if int, device number, if str serial number or
-          "fake" to use the simulator
-        camera (None or AndorCam2): Needed if the connection is done via the
-          I²C connector of the camera.
-        inverted (None): it is not allowed to invert the axes
-        slits (None, or dict int -> str, or dict int -> [str]): names of each slit,
-          for 1 to 4: in-side, in-direct, out-side, out-direct
-          Append "force_max" for a slit which requires to move to the maximum
-          value before going to the requested position. This is a workaround for
-          proper movement when the slit's reference switch doesn't work.
-        accessory (str or None): if "slitleds", then a TTL signal will be set to
-          high on line 1 whenever one of the slit leds might be turned on.
-        slitleds_settle_time (0 <= float): duration wait before (potentially)
-          turning on the slit leds. Useful to delay the move after the slitleds
-          interlock is set.
-        bands (None or dict 1<=int<=6 -> 2-tuple of floats > 0 or str):
-          wavelength range or name of each filter for the filter wheel from 1->6.
-          Positions without filters do not need to be defined.
-        fstepsize (0<float): size of one step on the focus actuator. Not very
-          important, mostly useful for providing to the user a rough idea of how
-          much the image will change after a move.
-        rng (dict str -> (float, float)): the min/max values for each axis.
-          They should within the standard hardware limits. If an axis is not
-          specified, the standard hardware limits are used.
-          For now it *only* works for the focus axis.
-        drives_shutter (list of float): flip-out angles for which the shutter
-          should be set to BNC (external) mode. Otherwise, the shutter is left
-          opened.
-        dependencies (None or dict str -> HwComponent): if the key starts with
-          "led_prot", it will set the .protection to True any time that the
-          slit leds could be turned on.
+        :param device (0<=int or str): if int, device number, if str serial number or
+        "fake" to use the simulator
+        :param camera (None or AndorCam2): Needed if the connection is done via the
+        I²C connector of the camera.
+        :param accessory: if "slitleds", then a TTL signal will be set to
+        high on line 1 whenever one of the slit leds might be turned on.
+        :param slitleds_settle_time (0 <= float): duration wait before (potentially)
+        turning on the slit leds. Useful to delay the move after the slitleds
+        interlock is set.
+        :param slits (None, or dict int -> str, or dict int -> [str]): names of each slit,
+        for 1 to 4: in-side, in-direct, out-side, out-direct
+        Append "force_max" for a slit which requires to move to the maximum
+        value before going to the requested position. This is a workaround for
+        proper movement when the slit's reference switch doesn't work.
+        :param iris: for each iris (0=direct, 1=side) -> axis name.
+        :param bands (None or dict 1<=int<=6 -> 2-tuple of floats > 0 or str):
+        wavelength range or name of each filter for the filter wheel from 1->6.
+        Positions without filters do not need to be defined.
+        :param rng (dict str -> (float, float)): the min/max values for each axis.
+        They should within the standard hardware limits. If an axis is not
+        specified, the standard hardware limits are used.
+        For now, it *only* works for the focus axis.
+        :param fstepsize (0<float): size of one step on the focus actuator. Not very
+        important, mostly useful for providing to the user a rough idea of how
+        much the image will change after a move.
+        :param drives_shutter: flip-out angles for which the shutter should be set
+        to BNC (external) mode. Otherwise, the shutter is left opened.
+        :param dependencies (None or dict str -> HwComponent): if the key starts with
+        "led_prot", it will set the .protection to True any time that the
+        slit leds could be turned on.
         :param check_move: Name of the axis -> bool: If True (default), after move, raise an error if
         that position is not the expected one. If False, if the position is not the expected one,
         just log a warning. Note: for now, only some axes are actually checked (flipper and band)
+        :param inverted: Must be None (or not passed), as it is not allowed to invert the axes.
+        :param _dll: only to be used by the ShamrockBus, to share the DLL between multiple instances.
+        If None, it will create a new DLL instance.
         """
         # From the documentation:
         # If controlling the shamrock through I²C it is important that both the
@@ -346,11 +386,16 @@ class Shamrock(model.Actuator):
         if kwargs.get("inverted", None):
             raise ValueError("Axis of spectrograph cannot be inverted")
 
-        if device == "fake":
+        self._is_dll_shared = (_dll is not None)
+        if _dll is not None:
+            self._dll = _dll
+        elif device == "fake":
             self._dll = FakeShamrockDLL(camera)
             device = 0
         else:
             self._dll = ShamrockDLL()
+
+        self._removeNonImplementedFunctions()
 
         # Note: it used to need a "ccd" dependency, but not anymore
         self._camera = camera
@@ -375,11 +420,23 @@ class Shamrock(model.Actuator):
             else:
                 raise ValueError("Slit name should be string or a list of strings, but got %s" % (slitn,))
 
-        self.Initialize()
+        self._iris_names = IRIS_NAMES.copy()
+        iris = iris or {}
+        for i, irisn in iris.items():
+            if not 0 <= i <= 1:
+                raise ValueError(f"Iris number should be 0 or 1, but got {i}")
+            if not isinstance(irisn, str):
+                raise ValueError(f"Iris name should be string, but got {irisn}")
+            self._iris_names[i] = irisn
+
+        if not self._is_dll_shared:
+            self.Initialize()
         self._reconnecting = False
 
         try:
             if isinstance(device, str):
+                # When using a shared DLL, the device is always specified as an int (not serial number)
+                assert not self._is_dll_shared
                 self._device = self._findDevice(device)
             else:
                 nd = self.GetNumberDevices()
@@ -513,17 +570,31 @@ class Shamrock(model.Actuator):
                 else:
                     logging.info("Slit %d (%s) is not present", i, slitn)
 
+            # Add iris axes
+            for i, irisn in self._iris_names.items():
+                if self.IrisIsPresent(i):
+                    # We shift the values by one because the minimum position "0" is not fully closed.
+                    # It's approximate, but at least "1" indicates that it's still a bit open.
+                    rng = [iris_hw_to_user(v) for v in (IRIS_POS_MIN, IRIS_POS_MAX)]
+                    axes[irisn] = model.Axis(unit="m", range=rng)
+                    logging.info("Iris %d added as %s", i, irisn)
+                elif i in iris:  # If the user requested it, and it's not there, that's an error
+                    raise ValueError(f"Iris {i} ({irisn}) is not present")
+
             if self.FlipperMirrorIsPresent(OUTPUT_FLIPPER):
                 # The position values are arbitrary, but these are the one we
                 # typically use in Odemis for switching between two positions
-                axes["flip-out"] = model.Axis(unit="rad",
-                                              choices=set(FLIPPER_TO_PORT.keys())
-                                              )
+                axes["flip-out"] = model.Axis(unit="rad", choices=set(FLIPPER_TO_PORT.keys()))
                 logging.info("Adding out mirror flipper as flip-out")
                 self._sanitiesFlipper(OUTPUT_FLIPPER)
             else:
                 logging.info("Out mirror flipper is not present")
-            # TODO: support INPUT_FLIPPER
+
+            if self.FlipperMirrorIsPresent(INPUT_FLIPPER):
+                axes["flip-in"] = model.Axis(unit="rad", choices=set(FLIPPER_TO_PORT.keys()))
+                logging.info("Adding in mirror flipper as flip-in")
+            else:
+                logging.info("In mirror flipper is not present")
 
             # Associate the output port to the shutter position
             # TODO: have a RO VA to represent the position of the shutter?
@@ -571,10 +642,20 @@ class Shamrock(model.Actuator):
             model.Actuator.__init__(self, name, role, axes=axes, **kwargs)
 
             # set HW and SW version
-            self._swVersion = "%s" % (odemis.__version__,)
+            try:
+                fw_ver = ", firmware " + self.GetFirmwareVersion()
+            except AttributeError:
+                fw_ver = ""
+            self._swVersion = "Odemis %s%s" % (odemis.__version__, fw_ver)
+
             sn = self.GetSerialNumber()
-            self._hwVersion = ("%s (s/n: %s, focal length: %d mm)" %
-                               ("Andor Shamrock", sn, round(fl * 1000)))
+            try:
+                model_id = " " + self.GetSystemModel()
+            except AttributeError:
+                model_id = ""
+
+            self._hwVersion = ("%s%s (s/n: %s, focal length: %d mm)" %
+                               ("Andor Shamrock", model_id, sn, round(fl * 1000)))
 
             # will take care of executing axis move asynchronously
             self._executor = CancellableThreadPoolExecutor(max_workers=1) # one task at a time
@@ -587,8 +668,22 @@ class Shamrock(model.Actuator):
             self._px2wl_lock = threading.Lock()
 
         except Exception:
-            self.Close()
+            if not self._is_dll_shared:
+                self.Close()
             raise
+
+    def _removeNonImplementedFunctions(self):
+        """
+        Remove the methods corresponding to functions which are not implemented on the current version
+        of the SDK.
+        """
+        # Functions only since SDK 2.104.30132
+        for f in ("GetSystemModel", "GetFirmwareVersion", "ChangeTurret", "ReadTurretRFID"):
+            if not hasattr(self._dll, "ATSpectrograph" + f):
+                logging.debug("Removing %s, which is not available on the current SDK", f)
+                # It can be removed from the class because all the instances at a given time will use
+                # the same SDK version.
+                delattr(Shamrock, f)
 
     def _setProtection(self, value):
         """
@@ -652,15 +747,14 @@ class Shamrock(model.Actuator):
         """
         Initialise the currently selected device
         """
-        # Can take quite a lot of time due to the homing
-        logging.debug("Initialising Andor Shamrock...") # ~20s
+        # Can take quite a lot of time due to the homing (up to 2 minutes)
+        logging.debug("Initialising Andor Shamrock...")
         if self._is_via_camera:
             path = self._camera._initpath
         else:
             path = ""
 
-        if sys.version_info[0] >= 3:  # Python 3
-            path = os.fsencode(path)
+        path = os.fsencode(path)
 
         # TODO: Catch the signal and raise an HwError in case it took too long.
         # Unfortunately, as we are calling C code from Python it's really hard,
@@ -689,25 +783,24 @@ class Shamrock(model.Actuator):
         logging.debug("Reconnecting spectrograph...")
         self.Close()
 
-        # In order to make reestablish the connection, we need to turn the power off and on again and then
-        # reinitialize.
-        logging.debug("Cycling power...")
+        # The most reliable way to reestablish the connection is to turn the power off & on and then reinitialize.
         if model.hasVA(self, 'powerSupply'):
+            logging.debug("Cycling power...")
             self.powerSupply.value = False
             time.sleep(2)  # wait a bit, otherwise the system doesn't notice
-            self.powerSupply.value = True
+            self.powerSupply.value = True  # Can be very long
             logging.debug("Cycling power complete.")
         else:
-            raise ValueError("Spectrograph doesn't have a power supplier, aborting reconnect.")
+            logging.error("Spectrograph doesn't have a power supplier, directly trying to reconnect.")
 
         # Initialization
-        self.Initialize()  # blocking, takes 2 min
+        self.Initialize()  # blocking, might take up to 2 min
 
         # Check if it's working
         # If the function is called on startup, we are not ready to call ._updatePosition yet
         try:
             self._updatePosition()
-            logging.debug("Restarting spectrograph after power cycling was successful.")
+            logging.debug("Reconnection to spectrograph successful.")
         except ShamrockError as ex:
             logging.error("Unable to restart spectrograph. Try to turn the power off and on again. Failed "
                           "with exception %s." % ex)
@@ -725,14 +818,36 @@ class Shamrock(model.Actuator):
         return nodevices.value
 
     @callWithReconnect
-    def GetSerialNumber(self):
+    def GetSerialNumber(self) -> str:
         """
-        Returns the device serial number
+        :return: the device serial number
         """
         serial = create_string_buffer(64) # hopefully always fit! (normally 6 bytes)
         with self._hw_access:
             self._dll.ShamrockGetSerialNumber(self._device, serial)
         return serial.value.decode('latin1')
+
+    # Only since SDK 2.104.30132 (will be removed automatically if not available)
+    @callWithReconnect
+    def GetSystemModel(self) -> str:
+        """
+        :return: the device model name (eg "KY328i-D2")
+        """
+        model_name = create_string_buffer(64)  # hopefully always fit!
+        with self._hw_access:
+            self._dll.ATSpectrographGetSystemModel(self._device, model_name)
+        return model_name.value.decode('latin1')
+
+    # Only since SDK 2.104.30132 (will be removed automatically if not available)
+    @callWithReconnect
+    def GetFirmwareVersion(self) -> str:
+        """
+        :return: the device firmware version (eg, "V2.0.124")
+        """
+        fw_ver = create_string_buffer(64)  # hopefully always fit!
+        with self._hw_access:
+            self._dll.ATSpectrographGetFirmwareVersion(self._device, fw_ver)
+        return fw_ver.value.decode('latin1')
 
     # Probably not needed, as ShamrockGetCalibration returns everything already
     # computed
@@ -750,6 +865,31 @@ class Shamrock(model.Actuator):
                  byref(FocalLength), byref(AngularDeviation), byref(FocalTilt))
 
         return FocalLength.value, math.radians(AngularDeviation.value), math.radians(FocalTilt.value)
+
+    # Only since SDK 2.104.30132 (will be removed automatically if not available)
+    def ChangeTurret(self):
+        """
+        Requests the turret to move to a special exchange position so that the user can access it
+        and swap it with another turret.
+        Blocks until the turret has reached the requested position.
+        Only available on some devices, like the KY328i, since SDK 2.104.30132.
+        """
+        with self._hw_access:
+            self._dll.ATSpectrographChangeTurret(self._device)
+
+    # Only since SDK 2.104.30132 (will be removed automatically if not available)
+    def ReadTurretRFID(self):
+        """
+        Requests the spectrograph to read the RFID tag of the turret. If the turret is away on the
+        the special exchange position, it will be first moved to the normal position.
+        Blocks until the turret has reached the requested position.
+        Only available on some devices, like the KY328i, since SDK 2.104.30132.
+        Note: this is the low-level call. This function doesn't take care of updating the grating
+        information on the axes.
+        """
+        # TODO: does it also work on a Ky193?
+        with self._hw_access:
+            self._dll.ATSpectrographReadTurretRFID(self._device)
 
     @callWithReconnect
     def SetTurret(self, turret):
@@ -934,6 +1074,7 @@ class Shamrock(model.Actuator):
           wavelength, the values might be meaningless, and multiple 0 nm can be
           returned.
         return (list of floats of length npixels): wavelength in m
+        :raise: ValueError if pixel-to-wavelength is not meaningful for current position (ie, 0th order)
         """
         assert(0 < npixels)
         # Warning: if npixels <= 7, very weird/large values are returned (with SDK 2.100).
@@ -950,8 +1091,13 @@ class Shamrock(model.Actuator):
         # it is necessary. For example, the SDK call can completely block if a
         # move is currently happening.
         with self._hw_access:
-            self._dll.ShamrockGetCalibration(self._device, CalibrationValues, npixels)
-        logging.debug("Calibration info returned")
+            try:
+                self._dll.ShamrockGetCalibration(self._device, CalibrationValues, npixels)
+            except ShamrockError as ex:
+                # fails with 20249 if not grating mode (eg, mirror, or wavelength < 25nm)
+                if ex.errno == 20249:
+                    raise ValueError("Wavelength calibration not available for current position")
+                raise
         # Note: it just applies the polynomial, so you can end up with negative
         # values. We used to change all to 0, but that was even more confusing
         # because multiple bins were associated to 0.
@@ -1062,7 +1208,7 @@ class Shamrock(model.Actuator):
     def GetFocusMirror(self):
         """
         Get the current position of the focus
-        return (0<=int<=maxsteps): absolute position (in steps)
+        return (0<int<=maxsteps): absolute position (in steps)
         """
         focus = c_int()
         with self._hw_access:
@@ -1073,6 +1219,8 @@ class Shamrock(model.Actuator):
     def GetFocusMirrorMaxSteps(self):
         """
         Get the maximum position of the focus
+        WARNING: the KY328 returns 550, but if going precisely to 550, it will raise a "communication
+        error" (while going out of the official range raises a "parameter invalid" error).
         return (0 <= int): absolute max position (in steps)
         """
         focus = c_int()
@@ -1376,6 +1524,53 @@ class Shamrock(model.Actuator):
         self._dll.ShamrockAccessoryIsPresent(self._device, byref(present))
         return present.value != 0
 
+    # Iris management
+    # (Not documented anymore in the latest SDK, but still available. Probably just an error.)
+    @callWithReconnect
+    def IrisIsPresent(self, iris: int) -> bool:
+        """
+        Check if the given iris is present
+        :param iris: DIRECT_PORT or SIDE_PORT
+        :return: True if the given iris is present
+        """
+        if iris not in (DIRECT_PORT, SIDE_PORT):
+            raise ValueError(f"iris argument should be either DIRECT_PORT or SIDE_PORT, but got {iris}")
+
+        present = c_int()
+        self._dll.ATSpectrographIrisIsPresent(self._device, iris, byref(present))
+        return present.value != 0
+
+    @callWithReconnect
+    def SetIris(self, iris: int, value: int) -> None:
+        """
+        Sets iris position for the specified iris port.
+        :param iris: DIRECT_PORT or SIDE_PORT
+        :param value: 0 <= int <= 100
+        """
+        if iris not in (DIRECT_PORT, SIDE_PORT):
+            raise ValueError(f"iris argument should be either DIRECT_PORT or SIDE_PORT, but got {iris}")
+        if not isinstance(value, int) or not IRIS_POS_MIN <= value <= IRIS_POS_MAX:
+            raise ValueError(f"Iris position should be within {IRIS_POS_MIN}->{IRIS_POS_MAX}, but got {value}")
+
+        with self._hw_access:
+            logging.debug("Setting iris %d to %d", iris, value)
+            self._dll.ATSpectrographSetIris(self._device, iris, value)
+
+    @callWithReconnect
+    def GetIris(self, iris: int) -> int:
+        """
+        Gets the iris position for the specified port.
+        :param iris: DIRECT_PORT or SIDE_PORT
+        :return: iris opening: 0 <= int <= 100
+        """
+        if iris not in (DIRECT_PORT, SIDE_PORT):
+            raise ValueError(f"iris argument should be either DIRECT_PORT or SIDE_PORT, but got {iris}")
+
+        value = c_int()
+        with self._hw_access:
+            self._dll.ATSpectrographGetIris(self._device, iris, byref(value))
+        return value.value
+
     # Helper functions
     def _getGratingChoices(self):
         """
@@ -1423,11 +1618,17 @@ class Shamrock(model.Actuator):
             if name in self.axes:
                 pos[name] = self.GetAutoSlitWidth(i)
 
-        if "flip-out" in self.axes:
-            val = self.GetFlipperMirror(OUTPUT_FLIPPER)
-            userv = [k for k, v in FLIPPER_TO_PORT.items() if v == val][0]
-            pos["flip-out"] = userv
+        for i, name in self._iris_names.items():
+            if name in self.axes:
+                pos[name] = iris_hw_to_user(self.GetIris(i))
 
+        for n, name in ((OUTPUT_FLIPPER, "flip-out"), (INPUT_FLIPPER, "flip-in")):
+            if name in self.axes:
+                val = self.GetFlipperMirror(n)
+                userv = [k for k, v in FLIPPER_TO_PORT.items() if v == val][0]
+                pos[name] = userv
+
+        logging.debug("%s position updated to %s", self.name, pos)
         self.position._set_value(pos, must_notify=must_notify, force_write=True)
 
     def _storeFocus(self):
@@ -1445,6 +1646,7 @@ class Shamrock(model.Actuator):
             op = 0
         f = self.GetFocusMirror()
         self._go2focus[(g, op)] = f
+        logging.debug("Focus position for %s/%s stored to %d stp", g, op, f)
 
     def _restoreFocus(self):
         """
@@ -1496,8 +1698,13 @@ class Shamrock(model.Actuator):
 
             self.SetNumberPixels(npixels)
             self.SetPixelWidth(pxs)
-            calib = self.GetCalibration(npixels)
-        if calib[-1] < 1e-9:
+            try:
+                calib = self.GetCalibration(npixels)
+            except ValueError as ex:
+                logging.info(str(ex))
+                calib = []
+
+        if not calib or calib[-1] < 1e-9:
             cw = self.position.value["wavelength"]
             logging.error("Calibration data doesn't seem valid, will use internal one (cw = %f nm): %s",
                           cw * 1e9, calib)
@@ -1560,14 +1767,29 @@ class Shamrock(model.Actuator):
         width (float): opening width in m
         return (float, float): minimum/maximum wavelength observed
         """
-        # Pretend we have a small CCD and look at the wavelength at the side
-        # Note: In theory, we could just say we have 2 pixels, but the SDK doesn't
-        # seem to put the center exactly at the center of the sensor (ie, it
-        # seems pixel npixels/2 get the center wavelength), and the SDK doesn't
-        # like resolutions < 8 anyway.
-        self.SetNumberPixels(10)
-        self.SetPixelWidth(width / 10)
-        calib = self.GetCalibration(10)
+        # If wavelength is 0, report very large range to indicate it's "all wavelengths"
+        cw = self.position.value["wavelength"]
+        if cw <= 1e-9:
+            return [0, 2000e-9]
+
+        with self._px2wl_lock:
+            cw = self.position.value["wavelength"]
+            if cw <= 1e-9:
+                return [0, 2000e-9]
+
+            # Pretend we have a small CCD and look at the wavelength at the side.
+            # Note: In theory, we could just say we have 2 pixels, but the SDK doesn't
+            # seem to put the center exactly at the center of the sensor (ie, it seems pixel
+            # npixels/2 has the center wavelength), and some old SDK versions didn't like
+            # resolutions < 8 anyway. (As of SDK 2.104, that now seems to work fine with 2 pixels)
+            self.SetNumberPixels(10)
+            self.SetPixelWidth(width / 10)
+            try:
+                calib = self.GetCalibration(10)
+            except ValueError as ex:
+                logging.info(str(ex))
+                return [0, 2000e-9]
+
         return calib[0], calib[-1]
 
     @isasync
@@ -1595,6 +1817,9 @@ class Shamrock(model.Actuator):
             elif axis in self._slit_names.values():
                 sid = [k for k, v in self._slit_names.items() if v == axis][0]
                 actions.append((axis, self._doSetSlitRel, sid, s))
+            elif axis in self._iris_names.values():
+                iris_id = [k for k, v in self._iris_names.items() if v == axis][0]
+                actions.append((axis, self._doSetIrisRel, iris_id, s))
             else:
                 raise NotImplementedError("Relative move of axis %s not supported" % (axis,))
 
@@ -1613,13 +1838,10 @@ class Shamrock(model.Actuator):
         self._checkMoveAbs(pos)
 
         # If grating needs to be changed, change it first, then the wavelength
-        ordered_axes = ("grating", "wavelength", "band", "focus", "flip-out") + tuple(self._slit_names.values())
+        ordered_axes = util.sorted_according_to(pos.keys(), ("grating", "wavelength"))
         actions = []
         for axis in ordered_axes:
-            try:
-                p = pos[axis]
-            except KeyError:
-                continue
+            p = pos[axis]
             if axis == "grating":
                 actions.append((axis, self._doSetGrating, p))
             elif axis == "wavelength":
@@ -1629,12 +1851,18 @@ class Shamrock(model.Actuator):
                 actions.append((axis, self._doSetFilter, p, check))
             elif axis == "focus":
                 actions.append((axis, self._doSetFocusAbs, p))
+            elif axis == "flip-in":
+                check = self._check_move.get(axis, True)
+                actions.append((axis, self._doSetFlipper, INPUT_FLIPPER, p, check))
             elif axis == "flip-out":
                 check = self._check_move.get(axis, True)
                 actions.append((axis, self._doSetFlipper, OUTPUT_FLIPPER, p, check))
             elif axis in self._slit_names.values():
                 sid = [k for k, v in self._slit_names.items() if v == axis][0]
                 actions.append((axis, self._doSetSlitAbs, sid, p))
+            elif axis in self._iris_names.values():
+                iris_id = [k for k, v in self._iris_names.items() if v == axis][0]
+                actions.append((axis, self._doSetIrisAbs, iris_id, p))
 
         f = self._executor.submit(self._doMultipleActions, actions)
         return f
@@ -1777,6 +2005,33 @@ class Shamrock(model.Actuator):
         self.SetAutoSlitWidth(sid, width)
         self._updatePosition()
 
+    def _doSetIrisRel(self, iris_id: int, shift: float):
+        """
+        Change the iris opening by a value
+        :param iris_id: iris ID
+        :param shift: change in opening size in m
+        """
+        cur_pos = self.GetIris(iris_id)
+        width = iris_hw_to_user(cur_pos) + shift
+        # it's only now that we can check the absolute position is allowed
+        n = self._iris_names[iris_id]
+        rng = self.axes[n].range
+        if not rng[0] <= width <= rng[1]:
+            raise ValueError("Position %f of axis '%s' not within range %f→%f" %
+                             (width, n, rng[0], rng[1]))
+
+        self._doSetIrisAbs(iris_id, width)
+
+    def _doSetIrisAbs(self, iris_id: int, width: float):
+        """
+        Change the iris opening to a value
+        iris_id (int): iris ID
+        width (float): new position in m
+        """
+        p = iris_user_to_hw(width)
+        self.SetIris(iris_id, p)
+        self._updatePosition()
+
     def _doSetFlipper(self, flipper: int, pos: int, check: bool):
         """
         Change the flipper position to one of the two positions
@@ -1901,6 +2156,115 @@ class Shamrock(model.Actuator):
 
         return dev
 
+class ShamrockBus(model.HwComponent):
+    """
+    Create several Shamrock children, sharing the same library instance
+    Used to instantiate multiple Andor spectrographs, as they cannot be instantiated separately.
+    """
+    def __init__(self, name: str, role: str, children: Dict[str, Dict], daemon=None, **kwargs):
+        """
+        :param name: name of the component
+        :param role: role of the component (typically not useful)
+        :param children: abritrary role -> arguments for Shamrock. The arguments must contain a "device"
+        argument with the serial number of the spectrograph (not just a number). "fake" is also possible,
+        in which case a simulator is used.
+        """
+        super().__init__(name, role, daemon=daemon, **kwargs)
+
+        # prepare the children definitions, by matching the serial numbers from "device" argument
+        # The simulated devices are separated, as they don't need the library
+        shamrocks = {}
+        simulated = []
+        for ckwargs in children.values():
+            try:
+                # device will be replaced by the device number once we find it
+                device = ckwargs.pop("device")
+            except KeyError:
+                raise ValueError(f"Missing 'device' argument in child component {kwargs['name']}")
+            if not isinstance(device, str):
+                raise ValueError(f"The 'device' argument should be a string, but got \"{device}\"")
+
+            if device == "fake":
+                simulated.append(ckwargs)
+            else:
+                shamrocks[device] = ckwargs
+
+        for ckwargs in simulated:
+            dev = Shamrock(device="fake", daemon=daemon, **ckwargs)
+            self.children.value.add(dev)
+
+        if shamrocks:
+            self._dll = ShamrockDLL()
+            self.Initialize()
+
+            try:
+                # scan the devices
+                sn_c = create_string_buffer(64)
+                for n in range(self.GetNumberDevices()):
+                    self._dll.ShamrockGetSerialNumber(n, sn_c)
+                    sn = sn_c.value.decode('latin1')
+                    if sn in shamrocks:
+                        # create the child
+                        logging.debug("Found matching Andor Shamrock with S/N %s", sn)
+                        ckwargs = shamrocks.pop(sn)
+                        dev = Shamrock(device=n, daemon=daemon, **ckwargs)
+                        self.children.value.add(dev)
+                    else:
+                        logging.info("Skipping Andor Shamrock with S/N %s", sn)
+
+                    # In (the unlikely) case we have found all the spectrographs we need, but there are
+                    # more spectrographs, stop early.
+                    if not shamrocks:
+                        break
+            except Exception:
+                # One of the child init went wrong, just clean up and pass on the bad news
+                self.terminate()
+                raise
+
+            # Did we find all the spectrographs? If not, fail completely, and allow the user to turn on
+            # or plug in the missing ones, and retry from scratch.
+            if shamrocks:
+                logging.warning("Failed to find some of the spectrographs, will disconnect from all of them")
+                self.terminate()
+                sns = ", ".join(shamrocks.keys())
+                raise HwError(f"Cannot find Andor Shamrock with S/N {sns}, check it is "
+                              "turned on and connected.")
+
+    def terminate(self):
+        for c in self.children.value:
+            c.terminate()
+        self.Close()
+        super().terminate()
+
+    def Initialize(self):
+        """
+        Initialise the currently selected device
+        """
+        # Can take quite a lot of time due to the homing (up to 2 minutes)
+        logging.debug("Initialising Andor Shamrock (for all spectrographs)...")
+        path = b""
+
+        # TODO: Catch the signal and raise an HwError in case it took too long.
+        # Unfortunately, as we are calling C code from Python it's really hard,
+        # because the GIL is hold on and won't let us call any python code anymore.
+        try:
+            # Prepare to get killed (via SIGALRM) in case it took too long,
+            # because Initialize() is buggy and can block forever if it's
+            # confused by the hardware.
+            # Note, SDK 2.100.30026+ has now a timeout of 2 minutes.
+            signal.setitimer(signal.ITIMER_REAL, 150)
+            self._dll.ShamrockInitialize(path)
+        finally:
+            signal.setitimer(signal.ITIMER_REAL, 0)
+
+    def Close(self):
+        self._dll.ShamrockClose()
+
+    def GetNumberDevices(self):
+        nodevices = c_int()
+        self._dll.ShamrockGetNumberDevices(byref(nodevices))
+        return nodevices.value
+
 
 # Only for testing/simulation purpose
 # Very rough version that is just enough so that if the wrapper behaves correctly,
@@ -1972,10 +2336,13 @@ class FakeShamrockDLL(object):
                        3: 1000,
                       }
         # flippers: int (id) -> int (port number, 0 or 1)
-        self._flippers = {2: 0}
+        self._flippers = {INPUT_FLIPPER: DIRECT_PORT, OUTPUT_FLIPPER: DIRECT_PORT}
 
         # accessory: 2 lines -> int (0 or 1)
         self._accessory = [0, 0]
+
+        # iris: 2 iris (DIRECT_PORT, SIDE_PORT) -> int (0->100)
+        self._iris = {DIRECT_PORT: 10, SIDE_PORT: 50}
 
         # just for simulating the limitation of the iDus
         self._ccd = ccd
@@ -2020,6 +2387,12 @@ class FakeShamrockDLL(object):
 
     def ShamrockGetSerialNumber(self, device, serial):
         serial.value = b"SR193fake"
+
+    def ATSpectrographGetFirmwareVersion(self, device, version):
+        version.value = b"V1.23.4"
+
+    def ATSpectrographGetSystemModel(self, device, modl):
+        modl.value = b"FAKE-193"
 
     def ShamrockEepromGetOpticalParams(self, device, p_fl, p_ad, p_ft):
         fl = _deref(p_fl, c_float)
@@ -2253,6 +2626,42 @@ class FakeShamrockDLL(object):
             self._accessory[l] = s
         else:
             raise ShamrockError(20268, ShamrockDLL.err_code[20268])
+
+    def ATSpectrographIrisIsPresent(self, device, iris, p_present):
+        i = _val(iris)
+        present = _deref(p_present, c_int)
+        if i not in (0, 1):
+            raise ShamrockError(20268, ShamrockDLL.err_code[20267])
+
+        # Simulate the presence of the iris only on the direct port
+        if i == 0:
+            present.value = 1  # yes!
+        else:
+            present.value = 0  # no
+
+    def ATSpectrographSetIris(self, device, iris, value):
+        i = _val(iris)
+        v = _val(value)
+        if i not in (0, 1):
+            raise ShamrockError(20268, ShamrockDLL.err_code[20267])
+        if not 0 <= v <= 100:
+            raise ShamrockError(20268, ShamrockDLL.err_code[20268])
+
+        self._iris[i] = v
+
+    def ATSpectrographGetIris(self, device, iris, p_value):
+        i = _val(iris)
+        value = _deref(p_value, c_int)
+        if i not in (0, 1):
+            raise ShamrockError(20268, ShamrockDLL.err_code[20267])
+
+        value.value = self._iris[i]
+
+    def ATSpectrographChangeTurret(self, device):
+        time.sleep(5)
+
+    def ATSpectrographReadTurretRFID(self, device):
+        time.sleep(5)
 
 
 class AndorSpec(model.Detector):

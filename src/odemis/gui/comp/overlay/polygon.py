@@ -21,19 +21,26 @@ This file is part of Odemis.
 """
 import logging
 import math
+from typing import Optional
 
 import cairo
 import wx
 
 import odemis.gui as gui
 from odemis.gui.comp.overlay._constants import LINE_WIDTH_THICK, LINE_WIDTH_THIN
-from odemis.gui.comp.overlay.base import LineEditingMixin, Vec, WorldOverlay
+from odemis.gui.comp.overlay.base import (SEL_MODE_ROTATION, LineEditingMixin,
+                                          Vec, Label, WorldOverlay)
 from odemis.gui.comp.overlay.shapes import EditableShape
 import odemis.util.units as units
-from odemis.util.raster import point_in_polygon
 
 
-class PolygonOverlay(WorldOverlay, LineEditingMixin, EditableShape):
+class PolygonState:
+    def __init__(self, polygon_overlay) -> None:
+        self._finished = polygon_overlay._finished
+        self._points = polygon_overlay._points.copy()
+
+
+class PolygonOverlay(EditableShape, LineEditingMixin, WorldOverlay):
     """Overlay representing one polygon."""
 
     def __init__(self, cnvs, colour=gui.SELECTION_COLOUR):
@@ -41,14 +48,74 @@ class PolygonOverlay(WorldOverlay, LineEditingMixin, EditableShape):
         :param: cnvs: canvas for the overlay.
         :param: colour (str): hex colour code for the polygon.
         """
-        WorldOverlay.__init__(self, cnvs)
-        LineEditingMixin.__init__(self, colour)
         EditableShape.__init__(self, cnvs)
+        LineEditingMixin.__init__(self, colour)
+        # PolygonOverlay has attributes and methods of the "WorldOverlay" interface.
+        # However, WorldOverlay's __init__() is not called here because mouse events
+        # (such as EVT_LEFT_DOWN, EVT_LEFT_UP, etc.) are managed by ShapesOverlay's canvas.
+        # ShapesOverlay oversees PolygonOverlays, thereby preventing the redundant processing
+        # of mouse events by both ShapesOverlay and PolygonOverlay.
+        # If users need to use PolygonOverlay independently of ShapesOverlay, they can
+        # explicitly initialize WorldOverlay to manage its own mouse events.
 
-        self._label = self.add_label("", colour=self.colour, align=wx.ALIGN_CENTRE_HORIZONTAL)
-        # The points VA is set to _points if the shape is selected
-        self._points = []
+        self._label = Label(
+            text="",
+            pos=(0, 0),
+            font_size=12,
+            flip=True,
+            align=wx.ALIGN_CENTRE_HORIZONTAL,
+            colour=(1.0, 1.0, 1.0),  # default to white
+            opacity=1.0,
+            deg=None,
+            background=None
+        )
+        self._rotation_label = Label(
+            text="",
+            pos=(0, 0),
+            font_size=12,
+            flip=True,
+            align=wx.ALIGN_CENTRE_HORIZONTAL,
+            colour=(1.0, 1.0, 1.0),  # default to white
+            opacity=1.0,
+            deg=None,
+            background=None
+        )
         self.v_point.subscribe(self._on_v_point)
+
+    def copy(self):
+        """
+        :returns: (PolygonOverlay) a new instance of PolygonOverlay with necessary copied attributes.
+
+        """
+        shape = PolygonOverlay(self.cnvs)
+        shape.colour = self.colour
+        shape.restore_state(self.get_state())
+        return shape
+
+    def move_to(self, pos):
+        """Move the shape's center to a physical position."""
+        current_pos  = self.get_position()
+        shift = (pos[0] - current_pos[0], pos[1] - current_pos[1])
+        self._points = [p + shift for p in self._points]
+        self._phys_to_view()
+        self.points.value = self._points
+
+    def get_state(self) -> Optional[PolygonState]:
+        """Get the current state of the shape."""
+        # Only return the state if the polygon creation is finished
+        # By doing so avoid storing an undo action during polygon creation
+        if self.right_click_finished:
+            return PolygonState(self)
+        return None
+
+    def restore_state(self, state: PolygonState):
+        """Restore the shape to a given state."""
+        self._finished = state._finished
+        self._points = state._points
+        # The v_points will be calculated by _phys_to_view()
+        self.v_points = [None] * len(self._points)
+        self._phys_to_view()
+        self.points.value = self._points
 
     def _on_v_point(self, point):
         """Callback for a new value v_point in ClickMixin."""
@@ -68,80 +135,93 @@ class PolygonOverlay(WorldOverlay, LineEditingMixin, EditableShape):
             for idx, point in enumerate(self._points):
                 self.v_points[idx] = Vec(self.cnvs.phys_to_view(point, offset))
 
-    def is_point_in_shape(self, point):
+    def check_point_proximity(self, v_point):
+        """
+        Determine if the view point is in the proximity of the shape.
+
+        Proximity is defined as either:
+        - Near the edges of the shape or on the rotation knob.
+        - Inside the shape itself.
+
+        :param: v_point: The point in view coordinates.
+        :returns: whether the view point is near the edges or on the rotation knob
+            or inside the shape.
+        """
         # A polygon should have atleast 2 points after on_right_up
-        if len(self._points) > 2:
-            return point_in_polygon(point, self._points)
-        return False
+        if self.right_click_finished:
+            if len(self._points) > 2:
+                hover, _ = self.get_hover(v_point)
+                return hover != gui.HOVER_NONE
+            return False
+        return True
 
     def on_left_down(self, evt):
-        if self.active.value and self.selected.value:
+        if self.selected.value:
             LineEditingMixin._on_left_down(self, evt)
             self.cnvs.update_drawing()
-        else:
-            WorldOverlay.on_left_down(self, evt)
 
     def on_left_up(self, evt):
-        if self.active.value:
-            LineEditingMixin._on_left_up(self, evt)
-            if self.right_click_finished:
-                self._phys_to_view()
-                offset = self.cnvs.get_half_buffer_size()
-                p_point = Vec(self.cnvs.view_to_phys(evt.Position, offset))
-                self.selected.value = self.is_point_in_shape(p_point)
-                if self.selected.value:
-                    self.points.value = self._points
-            self.cnvs.update_drawing()
-        WorldOverlay.on_left_up(self, evt)
+        LineEditingMixin._on_left_up(self, evt)
+        if self.right_click_finished:
+            self._phys_to_view()
+            self.selected.value = self.check_point_proximity(evt.Position)
+            # The rotation point is outside the shape and cannot be captured by selection VA
+            # Also update the points VA if the selection mode is SEL_MODE_ROTATION
+            if self.selected.value:
+                self.points.value = self._points
+        self.cnvs.update_drawing()
 
     def on_right_down(self, evt):
-        if self.active.value:
-            LineEditingMixin._on_right_down(self, evt)
-            self.cnvs.update_drawing()
-        else:
-            WorldOverlay.on_right_down(self, evt)
+        LineEditingMixin._on_right_down(self, evt)
+        self.cnvs.update_drawing()
 
     def on_right_up(self, evt):
-        if self.active.value:
-            LineEditingMixin._on_right_up(self, evt)
-            self._view_to_phys()
-            if len(self._points) <= 2:
-                logging.warning("Cannot create a polygon for less than 3 points.")
-                self.reset_click_mixin()
-                self._points.clear()
-            # Set initial value
-            self.points.value = self._points
-            self.cnvs.update_drawing()
-        else:
-            WorldOverlay.on_right_up(self, evt)
-
-    def on_enter(self, evt):
-        if self.active.value:
-            self.cnvs.set_default_cursor(wx.CURSOR_CROSS)
-        else:
-            WorldOverlay.on_enter(self, evt)
-
-    def on_leave(self, evt):
-        if self.active.value:
-            self.cnvs.reset_default_cursor()
-        else:
-            WorldOverlay.on_leave(self, evt)
+        LineEditingMixin._on_right_up(self, evt)
+        self._view_to_phys()
+        if len(self._points) <= 2:
+            logging.warning("Cannot create a polygon for less than 3 points.")
+            self.reset_click_mixin()
+            self._points.clear()
+        # Set initial value
+        self.points.value = self._points
+        self.cnvs.update_drawing()
 
     def on_motion(self, evt):
-        if self.active.value and self.selected.value:
+        if self.selected.value:
             LineEditingMixin._on_motion(self, evt)
             if not self.dragging:
                 if self.hover == gui.HOVER_SELECTION:
                     self.cnvs.set_dynamic_cursor(gui.DRAG_CURSOR)
                 elif self.hover == gui.HOVER_EDGE:
                     self.cnvs.set_dynamic_cursor(wx.CURSOR_SIZING)
+                elif self.hover == gui.HOVER_ROTATION:
+                    self.cnvs.set_dynamic_cursor(wx.CURSOR_MAGNIFIER)
                 else:
                     self.cnvs.reset_dynamic_cursor()
             else:
                 self._view_to_phys()
             self.cnvs.update_drawing()
-        else:
-            WorldOverlay.on_motion(self, evt)
+
+    def draw_edges(self, ctx):
+        # Draw the edit and rotation points
+        b_rotation = Vec(self.cnvs.view_to_buffer(self.v_rotation))
+        ctx.set_dash([])
+        ctx.set_line_width(1)
+        ctx.set_source_rgba(0.1, 0.5, 0.8, 0.8)  # Dark blue-green
+        ctx.arc(b_rotation.x, b_rotation.y, 4, 0, 2 * math.pi)
+        ctx.fill()
+        offset = self.cnvs.get_half_buffer_size()
+        for point in self._points:
+            b_pos = self.cnvs.phys_to_buffer(point, offset)
+            ctx.arc(b_pos[0], b_pos[1], 4, 0, 2 * math.pi)
+            ctx.fill()
+        ctx.stroke()
+
+    def draw_rotation_label(self, ctx):
+        self._rotation_label.text = units.readable_str(math.degrees(self.rotation), "°", sig=4)
+        self._rotation_label.pos = self.cnvs.view_to_buffer(self.v_center)
+        self._rotation_label.background = (0, 0, 0)  # black
+        self._rotation_label.draw(ctx)
 
     def draw(self, ctx, shift=(0, 0), scale=1.0, line_width=4, dash=True):
         """Draw the selection as a polygon"""
@@ -149,10 +229,7 @@ class PolygonOverlay(WorldOverlay, LineEditingMixin, EditableShape):
             offset = self.cnvs.get_half_buffer_size()
 
             # draws the dotted line
-            if (self.active.value and self.selected.value):
-                line_width = LINE_WIDTH_THICK
-            else:
-                line_width = LINE_WIDTH_THIN
+            line_width = LINE_WIDTH_THICK if self.selected.value else LINE_WIDTH_THIN
 
             ctx.set_line_width(line_width)
             if dash:
@@ -180,6 +257,7 @@ class PolygonOverlay(WorldOverlay, LineEditingMixin, EditableShape):
                 b_current_pos = self.cnvs.phys_to_buffer(p_current_pos, offset)
                 ctx.move_to(*b_last_point)
                 ctx.line_to(*b_current_pos)
+                ctx.stroke()
 
                 # label creation
                 # unit vector for physical coordinates
@@ -220,9 +298,15 @@ class PolygonOverlay(WorldOverlay, LineEditingMixin, EditableShape):
                         self._label.font_size = 9
                     else:
                         self._label.font_size = 14
+                self._label.background = (0, 0, 0)  # background
                 self._label.draw(ctx)
+                # calculate the center explicitly for ShapesOverlay _get_shape function, if polygon creation is not finished
+                self._calc_center()
             else:
                 ctx.close_path()
+                ctx.stroke()
                 self._calc_edges()
-
-            ctx.stroke()
+                self.draw_edges(ctx)
+                # Draw the rotation label
+                if self.selection_mode == SEL_MODE_ROTATION:
+                    self.draw_rotation_label(ctx)

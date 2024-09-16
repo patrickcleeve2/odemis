@@ -26,16 +26,9 @@ import math
 import os
 import threading
 import time
-import warnings
 from concurrent.futures import CancelledError
 
 import numpy
-
-from odemis.acq.align.fastem import align, estimate_calibration_time
-from odemis.gui import FG_COLOUR_WARNING
-from odemis.util.driver import guessActuatorMoveDuration
-from odemis.util.registration import estimate_grid_orientation_from_img
-from odemis.util.transform import to_physical_space, SimilarityTransform
 
 try:
     from fastem_calibrations import (
@@ -52,9 +45,13 @@ except ImportError as err:
 
 from odemis import model, util
 from odemis.acq import fastem_conf, stitching
+from odemis.acq.align.fastem import align, estimate_calibration_time
 from odemis.acq.stitching import REGISTER_IDENTITY, FocusingMethod
 from odemis.acq.stream import SEMStream
 from odemis.util import img, TimeoutError, transform
+from odemis.util.driver import guessActuatorMoveDuration
+from odemis.util.registration import estimate_grid_orientation_from_img
+from odemis.util.transform import to_physical_space, SimilarityTransform
 
 # The executor is a single object, independent of how many times the module (fastem.py) is loaded.
 _executor = model.CancellableThreadPoolExecutor(max_workers=1)
@@ -329,7 +326,7 @@ class FastEMROC(object):
     scintillator is acquired and assigned with all ROAs on the respective scintillator.
     """
 
-    def __init__(self, name, coordinates, colour=FG_COLOUR_WARNING):
+    def __init__(self, name, coordinates, colour="#FFA300"):
         """
         :param name: (str) Name of the region of calibration (ROC). It is the name of the megafield (id) as stored on
                      the external storage.
@@ -366,7 +363,8 @@ def estimate_acquisition_time(roa, pre_calibrations=None):
 
 
 def acquire(roa, path, scanner, multibeam, descanner, detector, stage, scan_stage, ccd, beamshift, lens,
-            pre_calibrations=None, save_full_cells=False, settings_obs=None):
+            se_detector, ebeam_focus, pre_calibrations=None, save_full_cells=False, settings_obs=None,
+            spot_grid_thresh=0.5):
     """
     Start a megafield acquisition task for a given region of acquisition (ROA).
 
@@ -387,6 +385,8 @@ def acquire(roa, path, scanner, multibeam, descanner, detector, stage, scan_stag
     :param ccd: (model.DigitalCamera) A camera object of the diagnostic camera.
     :param beamshift: (tfsbc.BeamShiftController) Component that controls the beamshift deflection.
     :param lens: (static.OpticalLens) Optical lens component.
+    :param se_detector: (model.Detector) single beam secondary electron detector.
+    :param ebeam_focus: (model.Actuator) SEM focus control.
     :param pre_calibrations: (list[Calibrations]) List of calibrations that should be run before the ROA acquisition.
                              Default is None.
     :param save_full_cells: (bool) If True save the full cell images instead of cropping them
@@ -394,6 +394,8 @@ def acquire(roa, path, scanner, multibeam, descanner, detector, stage, scan_stag
     :param settings_obs: (SettingsObserver) VAs of all components of which some will be
                          integrated in the acquired ROA as metadata. Default is None,
                          if None the metadata will not be updated.
+    :param spot_grid_thresh: (0<float<=1) Relative threshold on the minimum intensity of spots in the
+        diagnostic camera image, calculated as `max(image) * spot_grid_thresh`.
 
     :return: (ProgressiveFuture) Acquisition future object, which can be cancelled. The result of the future is
              a tuple that contains:
@@ -407,8 +409,9 @@ def acquire(roa, path, scanner, multibeam, descanner, detector, stage, scan_stag
 
     # TODO: pass path through attribute on ROA instead of argument?
     # Create a task that acquires the megafield image.
-    task = AcquisitionTask(scanner, multibeam, descanner, detector, stage, scan_stage, ccd, beamshift, lens, roa, path,
-                           pre_calibrations, save_full_cells, settings_obs, f)
+    task = AcquisitionTask(scanner, multibeam, descanner, detector, stage, scan_stage, ccd, beamshift, lens,
+                           se_detector, ebeam_focus, roa, path, pre_calibrations, save_full_cells, settings_obs,
+                           spot_grid_thresh, f)
 
     f.task_canceller = task.cancel  # lets the future know how to cancel the task.
 
@@ -425,8 +428,9 @@ class AcquisitionTask(object):
     An ROA consists of multiple single field images.
     """
 
-    def __init__(self, scanner, multibeam, descanner, detector, stage, scan_stage, ccd, beamshift, lens, roa, path,
-                 pre_calibrations, save_full_cells, settings_obs, future):
+    def __init__(self, scanner, multibeam, descanner, detector, stage, scan_stage, ccd, beamshift, lens,
+                 se_detector, ebeam_focus, roa, path,
+                 pre_calibrations, save_full_cells, settings_obs, spot_grid_thresh, future):
         """
         :param scanner: (xt_client.Scanner) Scanner component connecting to the XT adapter.
         :param multibeam: (technolution.EBeamScanner) The multibeam scanner component of the acquisition server module.
@@ -440,6 +444,8 @@ class AcquisitionTask(object):
         :param ccd: (model.DigitalCamera) A camera object of the diagnostic camera.
         :param beamshift: (tfsbc.BeamShiftController) Component that controls the beamshift deflection.
         :param lens: (static.OpticalLens) Optical lens component.
+        :param se_detector: (model.Detector) single beam secondary electron detector.
+        :param ebeam_focus: (model.Actuator) SEM focus control.
         :param roa: (FastEMROA) The acquisition region object to be acquired (megafield).
         :param path: (str) Path on the external storage where the image data is stored. Here, it is possible
                     to specify sub-directories (such as acquisition date and project name) additional to the main
@@ -452,6 +458,8 @@ class AcquisitionTask(object):
                                to the effective cell size.
         :param settings_obs: (SettingsObserver) VAs of all components of which some will be
                              integrated in the acquired ROA as metadata. If None the metadata will not be updated.
+        :param spot_grid_thresh: (0<float<=1) Relative threshold on the minimum intensity of spots in the
+            diagnostic camera image, calculated as `max(image) * spot_grid_thresh`.
         :param future: (ProgressiveFuture) Acquisition future object, which can be cancelled. The result of the future
                         is a tuple that contains:
                             (model.DataArray): The acquisition data, which depends on the value of the
@@ -467,6 +475,8 @@ class AcquisitionTask(object):
         self._ccd = ccd
         self._beamshift = beamshift
         self._lens = lens
+        self._se_detector = se_detector
+        self._ebeam_focus = ebeam_focus
         self._roa = roa  # region of acquisition object
         self._roc2 = roa.roc_2.value  # object for region of calibration 2
         self._roc3 = roa.roc_3.value  # object for region of calibration 3
@@ -476,11 +486,15 @@ class AcquisitionTask(object):
         self._save_full_cells = save_full_cells
         self._pre_calibrations_future = None
         self._settings_obs = settings_obs
+        self._spot_grid_thresh = spot_grid_thresh
 
         # save the initial multibeam resolution, because the resolution will get updated if save_full_cells is True
         self._old_res = self._multibeam.resolution.value
 
-        self.path = fastem_util.create_image_dir("beam-shift-correction")
+        path = fastem_util.create_image_dir("beam-shift-correction")
+        # The path should be [image-dir]/beam-shift-correction/[timestamp]/[roa-name]
+        self.path = os.path.join(path, self._roa.name.value)
+        os.makedirs(self.path, exist_ok=True)
 
         # Dictionary containing the single field images with index as key: e.g. {(0,1): DataArray}.
         self.megafield = {}
@@ -524,23 +538,15 @@ class AcquisitionTask(object):
         self._future.set_progress(end=time.time() + total_roa_time)  # provide end time to future
         logging.info(
             "Starting acquisition of ROA %s, with expected duration of %f s, %s by %s fields and overlap %s.",
-            self._roa.name, total_roa_time, self._roa.field_indices[-1][0] + 1, self._roa.field_indices[-1][1] + 1,
-            self._roa.overlap,
+            self._roa.name.value, total_roa_time, self._roa.field_indices[-1][0] + 1,
+            self._roa.field_indices[-1][1] + 1, self._roa.overlap,
         )
 
         # Update the position of the first tile.
         self._pos_first_tile = self.get_pos_first_tile()
 
         if self._pre_calibrations:
-            # The pre-calibrations should run on a position that lies a full field
-            # outside the ROA, therefore temporarily set the overlap to zero.
-            overlap_init = self._roa.overlap
-            self._roa.overlap = 0
-            # Move the stage to the tile with index (-1, -1), to ensure the autofocus and image translation pre-align
-            # are done to the top left of the first field, outside the region of acquisition to limit beam damage.
-            self.field_idx = (-1, -1)
             self.pre_calibrate(self._pre_calibrations)
-            self._roa.overlap = overlap_init  # set back the overlap to the initial value
 
         # set the sub-directories (<user>/<project-name>/<roa-name>)
         # FIXME use username from GUI when that is implemented
@@ -624,12 +630,13 @@ class AcquisitionTask(object):
         Acquire the single field images that resemble the region of acquisition (ROA, megafield image).
         :param dataflow: (model.DataFlow) The dataflow on the detector.
         """
+        beam_shift_indices = self._calculate_beam_shift_cor_indices()
 
         total_field_time = self._detector.frameDuration.value + 1.5  # there is about 1.5 seconds overhead per field
         # The first field is acquired twice, so the timeout must be at least twice the total field time.
         # Use 5 times the total field time to have a wide margin.
         timeout = 5 * total_field_time + 2
-
+        beam_shift_failed = False
         # Acquire all single field images, which are automatically offloaded to the external storage.
         for field_idx in self._roa.field_indices:
             # Reset the event that waits for the image being received (puts flag to false).
@@ -639,16 +646,25 @@ class AcquisitionTask(object):
 
             self.move_stage_to_next_tile()  # move stage to next field image position
             self._scanner.blanker.value = False  # unblank the beam
-            # TODO remove the below temporary fix when a proper solution is found
-            # The temporary fix has been applied so that the ROAs acquisition can still continue upon failure
-            # of correcting the beam shift
-            try:
-                self.correct_beam_shift()  # correct the shift of the beams caused by the parasitic magnetic field.
-            except Exception:
-                logging.exception("Correcting the beam shift failed, check if the image quality is still good.")
-                # In case of failure save the ccd image
-                ccd_image = self._ccd.data.get(asap=False)
-                fastem_util.save_image(self.path, f"{self.field_idx}_after.tiff", ccd_image)
+
+            prev_beam_shift = self._beamshift.shift.value
+            if field_idx in beam_shift_indices or beam_shift_failed:
+                logging.debug(f"Will run beam shift correction for field index {field_idx}")
+                try:
+                    new_beam_shift = self.correct_beam_shift()
+                    # The difference in x or y should not be larger than 2 micrometers
+                    if any(map(lambda n, p: abs(n - p) > 2e-6, new_beam_shift, prev_beam_shift)):
+                        raise ValueError(
+                            f"Difference in beam shift is larger than 2 µm, therefore it most likely failed. "
+                            f"Previous beam shift: {prev_beam_shift}, new beam shift: {new_beam_shift}"
+                        )
+                    beam_shift_failed = False
+                except Exception:
+                    logging.exception("Correcting the beam shift failed, check if the image quality is still good.")
+                    # In case of failure save the ccd image
+                    ccd_image = self._ccd.data.get(asap=False)
+                    fastem_util.save_image(self.path, f"{self.field_idx}_after.tiff", ccd_image)
+                    beam_shift_failed = True
 
             dataflow.next(field_idx)  # acquire the next field image.
 
@@ -689,23 +705,45 @@ class AcquisitionTask(object):
         if not fastem_calibrations:
             raise ModuleNotFoundError("Need fastem_calibrations repository to run pre-calibrations.")
 
+        # The pre-calibrations should run on a position that lies a full field
+        # outside the ROA, therefore temporarily set the overlap to zero.
+        overlap_init = self._roa.overlap
+        self._roa.overlap = 0
+        # Move the stage such that the pre-calibrations are done to the left of the top left field,
+        # outside the region of acquisition to limit beam damage.
+        fi = numpy.array(self._roa.field_indices)
+        # col, row => row 0 is the top of the ROA and the lowest column value is the most left field
+        min_col = numpy.min(fi[fi[:, 1] == 0], axis=0)[0]
+
         logging.debug("Start pre-calibration.")
-        pos_hor, pos_vert = self.get_abs_stage_movement()  # get the absolute position for the new tile
-
-        logging.debug(f"Moving to stage position x: {pos_hor}, y: {pos_vert}")
-        self._stage_scan.moveAbsSync({'x': pos_hor, 'y': pos_vert})
-
-        self._pre_calibrations_future = align(self._scanner, self._multibeam,
-                                              self._descanner, self._detector,
-                                              self._stage, self._ccd,
-                                              self._beamshift, None,  # no need for the detector rotator
-                                              calibrations=pre_calibrations)
-
         try:
-            self._pre_calibrations_future.result()  # wait for the calibrations to be finished
-        except CancelledError:
-            logging.debug("Cancelled acquisition pre-calibrations.")
-            raise
+            for i in range(3):  # try running the pre-calibrations 3 times
+                # Move 1/10th of a field to the top right
+                self.field_idx = (min_col - 1 + 0.1 * i, - i * 0.1)
+                pos_hor, pos_vert = self.get_abs_stage_movement()  # get the absolute position for the new tile
+                logging.debug(f"Moving to stage position x: {pos_hor}, y: {pos_vert}")
+                self._stage_scan.moveAbsSync({'x': pos_hor, 'y': pos_vert})
+                logging.debug(f"Will run pre-calibrations at field index {self.field_idx}")
+                try:
+                    self._pre_calibrations_future = align(self._scanner, self._multibeam,
+                                                          self._descanner, self._detector,
+                                                          self._stage, self._ccd,
+                                                          self._beamshift, None,  # no need for the detector rotator
+                                                          self._se_detector, self._ebeam_focus,
+                                                          calibrations=pre_calibrations)
+                    self._pre_calibrations_future.result()  # wait for the calibrations to be finished
+                    break  # if it successfully ran, do not try again
+                except CancelledError:
+                    logging.debug("Cancelled acquisition pre-calibrations.")
+                    raise
+                except Exception as err:
+                    if i == 2:
+                        raise ValueError(f"Pre-calibrations failed 3 times, with error {err}")
+                    else:
+                        logging.warning(f"Pre-calibration failed for ROA {self._roa.name.value} with error {err}, "
+                                        f"will try again.")
+        finally:
+            self._roa.overlap = overlap_init  # set back the overlap to the initial value
 
         logging.debug("Finish pre-calibration.")
 
@@ -813,6 +851,8 @@ class AcquisitionTask(object):
         beams are roughly centered on the mppc detector. Using the difference between the current beam positions and the
         good beam positions we calculate in what direction and how much to shift beams, such that they are always
         centered on the mppc detector.
+
+        :return: (float, float) the value of the beam shift after correction
         """
         pixel_size = self._ccd.pixelSize.value
         magnification = self._lens.magnification.value
@@ -820,7 +860,7 @@ class AcquisitionTask(object):
         # asap=False: wait until new image is acquired (don't read from buffer)
         ccd_image = self._ccd.data.get(asap=False)
         tform, error = estimate_grid_orientation_from_img(ccd_image, (8, 8), SimilarityTransform, sigma,
-                                                          threshold_rel=0.5)
+                                                          threshold_rel=self._spot_grid_thresh)
         logging.debug(f"Found center of grid at {tform.translation}, error: {error}.")
 
         # Determine the shift of the spots, by subtracting the good multiprobe position from the average (center)
@@ -854,6 +894,7 @@ class AcquisitionTask(object):
         self._beamshift.shift.value = (cur_beam_shift_pos + beam_shift_cor)
 
         logging.debug("New beam shift m: {}".format(self._beamshift.shift.value))
+        return self._beamshift.shift.value
 
     def _create_acquisition_metadata(self):
         """
@@ -874,6 +915,32 @@ class AcquisitionTask(object):
 
         self._detector.updateMetadata({model.MD_EXTRA_SETTINGS: json.dumps(selected_settings)})
         return selected_settings
+
+    def _calculate_beam_shift_cor_indices(self, n_beam_shifts=10):
+        """
+        Calculate for which indices to run the beam shift correction. The beam shift correction should run every
+        n sections, starting at the first field in a row. For polygonal sections there can be gaps in the indices,
+        the beam shift correction should then be run on the next possible section.
+        Example: If the beam shift correction should run every 3 sections for the indices [(1, 0), (2, 0), (8, 0)],
+        it should run for indices (1, 0) and (8, 0).
+
+        :param n_beam_shifts: (int) Number of sections after which the beam shift correction should run.
+        """
+        # Sort indices by row first and then by column to enable row-wise processing
+        field_indices = sorted(self._roa.field_indices, key=lambda x: (x[1], x[0]))
+
+        beam_shift_indices = []
+        current_row = -1  # Initialize with -1 to handle the first row (row 0) properly
+        for idx in field_indices:
+            col, row = idx  # field indices are saved (col, row)
+            if row > current_row:
+                # Always apply beam shift correction at the start of a new row
+                beam_shift_indices.append(idx)
+                current_row = row
+            elif col >= beam_shift_indices[-1][0] + n_beam_shifts:
+                # Apply beam shift correction after every n_beam_shifts for the rest of the row
+                beam_shift_indices.append(idx)
+        return beam_shift_indices
 
 
 ########################################################################################################################
@@ -1015,6 +1082,10 @@ class OverviewAcquisition(object):
 
         :returns: (DataArray) The complete overview image.
         """
+        logging.debug("Referencing stage axes x and y.")
+        f = stage.reference({"x", "y"})
+        f.result(timeout=180)
+
         # Get the current immersion mode value before configuring the scanner.
         # This value is set back after acquireTiledArea future's result.
         current_immersion_mode = stream.emitter.immersion.value

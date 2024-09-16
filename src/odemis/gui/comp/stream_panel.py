@@ -40,7 +40,7 @@ from odemis.gui.comp.slider import UnitFloatSlider, VisualRangeSlider, UnitInteg
 from odemis.gui.comp.stream_bar import StreamBar
 from odemis.gui.comp.text import SuggestTextCtrl, UnitFloatCtrl, FloatTextCtrl, UnitIntegerCtrl
 from odemis.gui.evt import StreamRemoveEvent, StreamVisibleEvent, StreamPeakEvent
-from odemis.gui.util import call_in_wx_main
+from odemis.gui.util import call_in_wx_main, ignore_dead
 from odemis.gui.util.widgets import VigilantAttributeConnector
 from odemis.model import TINT_FIT_TO_RGB, TINT_RGB_AS_IS
 import wx
@@ -140,9 +140,9 @@ class StreamPanelHeader(wx.Control):
     def _add_remove_btn(self):
         """ Add a button for stream removal """
         btn_rem = buttons.ImageButton(self,
-                                      bitmap=img.getBitmap("icon/ico_rem_str.png"),
+                                      bitmap=img.getBitmap("icon/ico_clear.png"),
                                       size=self.BUTTON_SIZE)
-        btn_rem.bmpHover = img.getBitmap("icon/ico_rem_str_h.png")
+        btn_rem.bmpHover = img.getBitmap("icon/ico_clear_h.png")
         btn_rem.SetToolTip("Remove stream")
         self._add_ctrl(btn_rem)
         return btn_rem
@@ -406,6 +406,7 @@ class StreamPanelHeader(wx.Control):
             self.label_change_callback(self.ctrl_label.GetValue())
 
     @call_in_wx_main
+    @ignore_dead
     def _on_colormap_value(self, colour):
         """ Update the colormap selector to reflect the provided colour """
         # determine which value to select

@@ -13,7 +13,7 @@ import sys
 import numpy
 
 # To be updated to the current version
-VERSION = "3.4.0"
+VERSION = "3.5.0"
 # We cannot use the git version because it's not (always) available when building
 # the debian package
 
@@ -64,6 +64,7 @@ if sys.platform.startswith('linux'):
                   ('/lib/udev/rules.d', glob.glob('install/linux/lib/udev/rules.d/*.rules')),
                   ('share/odemis/', glob.glob('install/linux/usr/share/odemis/*.odm.yaml')),
                   ('share/odemis/sim', glob.glob('install/linux/usr/share/odemis/sim/*.odm.yaml')),
+                  ('share/odemis/sim', glob.glob('install/linux/usr/share/odemis/sim/*.desktop')),
                   ('share/odemis/examples', glob.glob('install/linux/usr/share/odemis/examples/*.odm.yaml')),
                   ('share/odemis/hwtest', glob.glob('install/linux/usr/share/odemis/hwtest/*.odm.yaml')),
                   # The key(s) for the bug reporter
@@ -95,6 +96,7 @@ if sys.platform.startswith('linux'):
                'install/linux/usr/bin/odemis-hw-status',
                'install/linux/usr/bin/odemis-live-view',
                'install/linux/usr/bin/odemis-mic-selector',
+               'install/linux/usr/bin/odemis-select-mic-start',
                'util/piconfig',
                'util/pituner',
                'util/piterminal',

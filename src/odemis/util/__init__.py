@@ -24,23 +24,24 @@ Odemis. If not, see http://www.gnu.org/licenses/.
 # Various helper functions that have a generic usefulness
 # Warning: do not put anything that has dependencies on non default python modules
 
-import queue
-from collections.abc import Mapping
-from concurrent.futures import CancelledError
-from decorator import decorator
-from functools import wraps
 import inspect
 import itertools
 import logging
 import math
-import numpy
+import queue
 import signal
 import sys
 import threading
 import time
-import weakref
 import types
+import weakref
+from collections.abc import Mapping
+from concurrent.futures import CancelledError
+from functools import wraps
 from typing import Iterable, Tuple, TypeVar
+
+import numpy
+from decorator import decorator
 
 from . import weak
 
@@ -605,57 +606,62 @@ def limit_invocation(delay_s):
     return li_dec
 
 
-def inspect_getmembers(object, predicate=None):
-    """
-    Fix for the corresponding function in inspect. If we modify __getattr__ of a function, inspect.getmembers()
-    doesn't work as intended (a TypeError is raised). The change consists of one line (highlighted below).
-    https://stackoverflow.com/questions/54478679/workaround-for-getattr-special-method-breaking-inspect-getmembers-in-pytho
-    """
-    # Line below adds inspect. reference to isclass()
-    if inspect.isclass(object):
-        # Line below adds inspect. reference to getmro()
-        mro = (object,) + inspect.getmro(object)
-    else:
-        mro = ()
-    results = []
-    processed = set()
-    names = dir(object)
-    # :dd any DynamicClassAttributes to the list of names if object is a class;
-    # this may result in duplicate entries if, for example, a virtual
-    # attribute with the same name as a DynamicClassAttribute exists
-    try:
-        for base in object.__bases__:
-            for k, v in base.__dict__.items():
-                if isinstance(v, types.DynamicClassAttribute):
-                    names.append(k)
-    #################################################################
-    ### Modification to inspect.getmembers: also catch TypeError here
-    #################################################################
-    except (AttributeError, TypeError):
-        pass
-    for key in names:
-        # First try to get the value via getattr.  Some descriptors don't
-        # like calling their __get__ (see bug #1785), so fall back to
-        # looking in the __dict__.
+# inspect.getmembers() in Python 3.10 and prior has an issue when __getattr__ is modified.
+if sys.version_info >= (3, 11):
+    def inspect_getmembers(object, predicate=None):
+        return inspect.getmembers(object, predicate)
+else:
+    def inspect_getmembers(object, predicate=None):
+        """
+        Fix for the corresponding function in inspect. If we modify __getattr__ of a function, inspect.getmembers()
+        doesn't work as intended (a TypeError is raised). The change consists of one line (highlighted below).
+        https://stackoverflow.com/questions/54478679/workaround-for-getattr-special-method-breaking-inspect-getmembers-in-pytho
+        """
+        # Line below adds inspect. reference to isclass()
+        if inspect.isclass(object):
+            # Line below adds inspect. reference to getmro()
+            mro = (object,) + inspect.getmro(object)
+        else:
+            mro = ()
+        results = []
+        processed = set()
+        names = dir(object)
+        # :dd any DynamicClassAttributes to the list of names if object is a class;
+        # this may result in duplicate entries if, for example, a virtual
+        # attribute with the same name as a DynamicClassAttribute exists
         try:
-            value = getattr(object, key)
-            # handle the duplicate key
-            if key in processed:
-                raise AttributeError
-        except AttributeError:
-            for base in mro:
-                if key in base.__dict__:
-                    value = base.__dict__[key]
-                    break
-            else:
-                # could be a (currently) missing slot member, or a buggy
-                # __dir__; discard and move on
-                continue
-        if not predicate or predicate(value):
-            results.append((key, value))
-        processed.add(key)
-    results.sort(key=lambda pair: pair[0])
-    return results
+            for base in object.__bases__:
+                for k, v in base.__dict__.items():
+                    if isinstance(v, types.DynamicClassAttribute):
+                        names.append(k)
+        #################################################################
+        ### Modification to inspect.getmembers: also catch TypeError here
+        #################################################################
+        except (AttributeError, TypeError):
+            pass
+        for key in names:
+            # First try to get the value via getattr.  Some descriptors don't
+            # like calling their __get__ (see bug #1785), so fall back to
+            # looking in the __dict__.
+            try:
+                value = getattr(object, key)
+                # handle the duplicate key
+                if key in processed:
+                    raise AttributeError
+            except AttributeError:
+                for base in mro:
+                    if key in base.__dict__:
+                        value = base.__dict__[key]
+                        break
+                else:
+                    # could be a (currently) missing slot member, or a buggy
+                    # __dir__; discard and move on
+                    continue
+            if not predicate or predicate(value):
+                results.append((key, value))
+            processed.add(key)
+        results.sort(key=lambda pair: pair[0])
+        return results
 
 class TimeoutError(Exception):
     pass
@@ -775,3 +781,66 @@ def bindFuture(future, fn, args=(), kwargs=None):
             future.set_exception(e)
     else:
         future.set_result(result)
+
+
+def slope_of_line(point1: Tuple[float, float], point2: Tuple[float, float]) -> float:
+    """
+    Calculate the slope of a line passing through two given points.
+    """
+    if point1[0] == point2[0]:  # Vertical line
+        slope = math.inf  # Slope is undefined for vertical lines
+    else:
+        slope = (point2[1] - point1[1]) / (point2[0] - point1[0])
+    return slope
+
+
+def intercept_of_line(point: Tuple[float, float], slope: float) -> float:
+    """
+    Calculate the intercept of a line passing through a given point with a specified slope.
+
+    :param point: The coordinates of the point through which the line passes.
+    :param slope: The slope of the line.
+
+    Note:
+        The equation of a line in slope-intercept form is y = mx + c, where:
+            - y is the vertical position of a point on the line.
+            - x is the horizontal position of a point on the line.
+            - m is the slope of the line.
+            - c is the y-intercept of the line, indicating where the line intersects the y-axis.
+
+        For vertical lines, since the slope is undefined, the x-coordinate of the point is returned
+        instead, representing the x-intercept where the line intersects the x-axis.
+    """
+    if math.isinf(slope):  # line is vertical
+        intercept = point[0]  # x-intercept for vertical line
+    else:
+        intercept = point[1] - slope * point[0]  # y-intercept for non-vertical line
+    return intercept
+
+
+def project_point_on_line(
+        point: Tuple[float, float], line_slope: float, line_intercept: float
+    ) -> Tuple[float, float]:
+    """
+    Calculate the projection of a point on a line.
+
+    :param point: The coordinates (x, y) of the point to be projected on the line.
+    :param line_slope: The slope of the line.
+    :param line_intercept: The intercept of the line.
+
+    :returns: The coordinates of the projected point on the line.
+
+    Note:
+        The projected point is basically the intersection point of the line
+        passing through the given point and perpendicular to the given line.
+
+        x_projected = x + m * (y - c) / (1 + m^2)
+        y_projected = m * x_projected + c
+    """
+    if math.isinf(line_slope):  # Vertical line
+        x_projected = line_intercept
+        y_projected = point[1]
+    else:
+        x_projected = (point[0] + line_slope * (point[1] - line_intercept)) / (1 + line_slope**2)
+        y_projected = line_slope * x_projected + line_intercept
+    return (x_projected, y_projected)

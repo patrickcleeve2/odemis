@@ -26,6 +26,7 @@ import wx
 
 from odemis.acq.stream import EMStream, FastEMSEMStream
 from odemis.gui import img, main_xrc
+from odemis.gui.comp.canvas import CAN_DRAG
 from odemis.gui.comp.viewport import FastEMMainViewport
 from odemis.gui.cont.fastem_user_settings_panel import FastEMUserSettingsPanel
 from odemis.gui.cont.tabs.tab_bar_controller import TabController
@@ -43,6 +44,7 @@ from odemis.gui.model import (
     FastEMMainTabGUIData,
     StreamView
 )
+from odemis.gui.util import call_in_wx_main
 from odemis.model import getVAs
 
 
@@ -178,6 +180,25 @@ class FastEMMainTab(Tab):
         self.tb.add_tool(TOOL_RECTANGLE, self.tab_data_model.tool)
         self.tb.add_tool(TOOL_ELLIPSE, self.tab_data_model.tool)
         self.tb.add_tool(TOOL_POLYGON, self.tab_data_model.tool)
+        # enable/disable toolbar buttons if acquiring
+        self.tab_data_model.main.is_acquiring.subscribe(self._on_is_acquiring)
+        # pause live stream if working on set of tools
+        self.tab_data_model.tool.subscribe(self._on_tool)
+
+    def query_terminate(self):
+        """
+        Show a confirmation pop-up when the user tries to close Odemis.
+        :return: (bool) True to proceed with termination, False for canceling
+        """
+        box = wx.MessageDialog(
+            self.main_frame,
+            "Do you want to close Odemis?",
+            caption="Closing Odemis",
+            style=wx.YES_NO | wx.ICON_QUESTION | wx.CENTER,
+        )
+        box.SetYesNoLabels("&Close Window", "&Cancel")
+        ans = box.ShowModal()  # Waits for the window to be closed
+        return ans == wx.ID_YES
 
     def on_pnl_user_settings_size(self, _):
         """Handle the wx.EVT_SIZE event for pnl_user_settings"""
@@ -204,6 +225,32 @@ class FastEMMainTab(Tab):
             img.getBitmap(f"icon/ico_chevron_{icon_direction}.png")
         )
         self.main_frame.Layout()
+
+    @call_in_wx_main
+    def _on_is_acquiring(self, mode):
+        """
+        Enable or disable the toolbar buttons depending on whether an acquisition
+        is already ongoing or not.
+
+        :param mode: (bool) whether the system is currently acquiring.
+        """
+        self.tab_data_model.tool.value = TOOL_NONE
+        self.tb.enable(not mode)
+
+    def _on_tool(self, selected_tool):
+        """Disable canvas drag and pause the SEM stream for a specific set of tools."""
+        if (
+            selected_tool in (TOOL_RECTANGLE, TOOL_ELLIPSE, TOOL_POLYGON)
+        ):
+            # Only let ShapesOverlay handle the dragging
+            # by doing so avoid the weird situation where the canvas is in a dragging state on tool change
+            if CAN_DRAG in self.vp.canvas.abilities:
+                self.vp.canvas.disable_drag()
+            if self.tab_data_model.semStream.should_update.value:
+                self.tab_data_model.semStream.is_active.value = False
+                self.tab_data_model.semStream.should_update.value = False
+        else:
+            self.vp.canvas.enable_drag()
 
     @classmethod
     def get_display_priority(cls, main_data):

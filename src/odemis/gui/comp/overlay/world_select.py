@@ -21,14 +21,14 @@ This file is part of Odemis.
     Odemis. If not, see http://www.gnu.org/licenses/.
 
 """
-
 import cairo
+import wx
+
 import odemis.gui as gui
 import odemis.util.units as units
-import wx
-from odemis.gui.comp.overlay.base import (EDIT_MODE_BOX,
-                                          SEL_MODE_CREATE, SEL_MODE_EDIT,
-                                          SelectionMixin, Vec, WorldOverlay)
+from odemis.gui.comp.overlay.base import (EDIT_MODE_BOX, SEL_MODE_CREATE,
+                                          SEL_MODE_EDIT, SelectionMixin,
+                                          Vec, WorldOverlay)
 
 
 class WorldSelectOverlay(WorldOverlay, SelectionMixin):
