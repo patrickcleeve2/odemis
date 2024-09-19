@@ -16,8 +16,8 @@ class TestFeatureEncoderDecoder(unittest.TestCase):
     """
     Test the json encoder and decoder of the CryoFeature class
     """
-    test_str = '{"feature_list": [{"name": "Feature-1", "status": "Active", "stage_pos": {"x": 0, "y": 0, "z": 0}, "focus_pos": {"z": 0}, "coordinate_system": "stage-fm"}, '+ \
-               '{"name": "Feature-2", "status": "Active", "stage_pos": {"x": 0.001, "y": 0.001, "z": 0.001}, "focus_pos": {"z": 0.002}, "coordinate_system": "stage-fm"}]}'
+    test_str = '{"feature_list": [{"name": "Feature-1", "status": "Active", "stage_pos": {"x": 0, "y": 0, "z": 0}, "focus_pos": {"z": 0}, "posture": "FM"}, '+ \
+               '{"name": "Feature-2", "status": "Active", "stage_pos": {"x": 0.001, "y": 0.001, "z": 0.001}, "focus_pos": {"z": 0.002}, "posture": "FM"}]}'
 
     def test_feature_encoder(self):
         feature1 = CryoFeature("Feature-1", stage_pos={"x": 0, "y": 0, "z": 0}, focus_pos={"z": 0})
