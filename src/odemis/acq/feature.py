@@ -15,19 +15,18 @@ class CryoFeature(object):
     Model class for a cryo interesting feature
     """
 
-    def __init__(self, name, stage_pos: dict, focus_pos: dict, streams=None, coordinate_system="stage-fm"):
+    def __init__(self, name, stage_pos: dict, focus_pos: dict, streams=None, posture: str = "FM"):
         """
         :param name: (string) the feature name
-        :param stage_pos: (dict) the stage position of the feature (meteor-stage)
+        :param stage_pos: (dict) the stage position of the feature (stage-bare)
         :param focus_pos: (dict) the focus position of the feature
+        :param posture: (string) the initial posture of the feature
         :param streams: (List of StaticStream) list of acquired streams on this feature
         """
         self.name = model.StringVA(name)
-        # The 3D position of an interesting point in the site (Typically, the milling should happen around that
-        # volume, never touching it.)
-        self.stage_pos = model.VigilantAttribute(stage_pos, unit="m") # stage-fm -> should be stage-bare eventually?
+        self.stage_pos = model.VigilantAttribute(stage_pos, unit="m") # stage-bare
         self.focus_pos = model.VigilantAttribute(focus_pos, unit="m")
-        self.coordinate_system = model.StringVA(coordinate_system)
+        self.posture = model.StringVA(posture)
 
         self.status = model.StringVA(FEATURE_ACTIVE)
         # TODO: Handle acquired files
@@ -46,7 +45,7 @@ def get_features_dict(features):
                         'status': feature.status.value,
                         'stage_pos': feature.stage_pos.value,
                         'focus_pos': feature.focus_pos.value,
-                        'coordinate_system': feature.coordinate_system.value}
+                        'posture': feature.posture.value}
         flist.append(feature_item)
     return {'feature_list': flist}
 

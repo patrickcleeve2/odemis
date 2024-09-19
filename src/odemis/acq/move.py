@@ -35,6 +35,7 @@ import scipy
 from odemis import model, util
 from odemis.util import executeAsyncTask
 from odemis.util.driver import ATOL_ROTATION_POS, isNearPosition, isInRange
+from odemis.util.transform import RigidTransform
 
 MAX_SUBMOVE_DURATION = 90  # s
 
@@ -333,6 +334,108 @@ class MeteorPostureManager(MicroscopePostureManager):
         """
         pass
 
+    def initialise_transformation(
+        self,
+        rotation: float = 0,
+        scale: tuple = None,
+        translation: tuple = None,
+        shear: tuple = None,
+    ):
+
+        # FROM CONVERT STAGE
+
+        self._axes_dep = {"x": "y", "y": "z"}
+        if scale is None:
+            scale = (1, 1)
+        if translation is None:
+            translation = (0, 0)
+        if shear is None:
+            shear = (0, 0)
+
+        self._metadata = {}
+        self._metadata[model.MD_POS_COR] = translation
+        self._metadata[model.MD_ROTATION_COR] = rotation
+        self._metadata[model.MD_PIXEL_SIZE_COR] = scale
+        self._metadata[model.MD_SHEAR_COR] = shear
+        self._updateConversion()
+
+    def _get_rot_matrix(self, invert=False):
+        
+        rotation = self._metadata[model.MD_ROTATION_COR]
+        if invert:
+            rotation *= -1
+        return RigidTransform(rotation=rotation).matrix
+
+    def _updateConversion(self):
+        translation = self._metadata[model.MD_POS_COR]
+        scale = self._metadata[model.MD_PIXEL_SIZE_COR]
+        shear = self._metadata[model.MD_SHEAR_COR]
+
+        if len(shear) == 3:
+            # TODO update the shear matrix if shear is in the first or second axis
+            # The shear matrix is for the shear in the z axis
+            shear_matrix = numpy.array([[1, 0, 0], [0, 1, 0], [shear[0], shear[1], 1]])
+        else:
+            shear_matrix = numpy.array([[1, shear[0]], [shear[1], 1]])
+
+        # Scaling*Shearing*Rotation for convert back/forth between exposed and dep
+        scale_matrix = numpy.identity(len(scale)) * scale
+        self._Mtodep = scale_matrix @ shear_matrix @ self._get_rot_matrix()
+        self._Mfromdep = numpy.linalg.inv(self._Mtodep)
+
+        # Offset between origins of the coordinate systems
+        self._O = numpy.array(translation, dtype=float)
+
+    def _convertPosFromdep(self, pos_dep, absolute=True):
+        # Object lens position vector
+        Q = numpy.array(pos_dep, dtype=float)
+        # Transform to coordinates in the reference frame of the sample stage
+        p = self._Mfromdep.dot(Q)
+        if absolute:
+            p -= self._O
+        return p.tolist()
+
+    def _convertPosTodep(self, pos, absolute=True):
+        # Sample stage position vector
+        P = numpy.array(pos, dtype=float)
+        if absolute:
+            P += self._O
+        # Transform to coordinates in the reference frame of the objective stage
+        q = self._Mtodep.dot(P)
+        return q.tolist()
+
+    def _get_pos_vector(self, pos_val, absolute=True):
+        """ Convert position dict into dependant axes position dict"""
+        if absolute:
+            vpos = pos_val["x"], pos_val["y"]
+        else:
+            vpos = pos_val.get("x", 0), pos_val.get("y", 0)
+        vpos_dep = self._convertPosTodep(vpos, absolute=absolute)
+        return {self._axes_dep["x"]: vpos_dep[0], self._axes_dep["y"]: vpos_dep[1]}
+
+    def to_dependant_position(self, pos: Dict[str, float]) -> Dict[str, float]:
+        """Convert position dict from original axes to dependant axes with all axis values
+        :param pos: position dict with all axis values (x, y) in the original axes
+        :return: position dict with all axis values (x, y) in the dependant axes
+        """
+        vpos = self._get_pos_vector({"x": pos["y"], "y": pos["z"]}, absolute=True)
+        
+        # NOTE: this really should have rx, rz
+        new_pos = pos.copy().update(vpos)
+        return new_pos
+
+    def from_dependent_position(self, pos: Dict[str, float]) -> Dict[str, float]:
+        """Convert position dict from dependant axes to original axes with all axis values
+        :param pos: position dict with all axis values (x, y, z) in the dependent axes
+        :return: position dict with all axis values (x, y, z) in the original axes
+        """
+        # Convert position dict from dependant axes to original axes
+        vpos = self._convertPosFromdep([pos[self._axes_dep["x"]], pos[self._axes_dep["y"]]])
+        # remap vpos x, y -> stage y, z
+        vpos = {"y": vpos[0], "z": vpos[1]}
+
+        new_pos = pos.copy().update(vpos)
+        return new_pos
 
 class MeteorTFS1PostureManager(MeteorPostureManager):
     def __init__(self, microscope):
@@ -342,6 +445,17 @@ class MeteorTFS1PostureManager(MeteorPostureManager):
         self.check_stage_metadata(required_keys=self.required_keys)
         if not {"x", "y", "rz", "rx"}.issubset(self.stage.axes):
             raise KeyError("The stage misses 'x', 'y', 'rx' or 'rz' axes")
+
+        # get the stage pre-tilt from the stage metadata
+        stage_md = self.stage.getMetadata()
+        pre_tilt = stage_md.get(model.MD_SAMPLE_PRE_TILT, None)
+
+        # get the pre-tilt from the convert-stage as legacy support
+        if pre_tilt is None:
+            convert_stage = model.getComponent(name="Linked YZ")
+            pre_tilt = convert_stage.getMetadata()[model.MD_ROTATION_COR]
+
+        self.initialise_transformation(rotation=pre_tilt)
 
     def getTargetPosition(self, target_pos_lbl: int) -> Dict[str, float]:
         """

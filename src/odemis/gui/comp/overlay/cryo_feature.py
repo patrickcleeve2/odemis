@@ -264,7 +264,7 @@ class CryoFeatureOverlay(StagePointSelectOverlay, DragMixin):
 
         # Show each feature icon and label if applicable
         for feature in self.tab_data.main.features.value:
-            pos = feature.stage_pos.value # TODO: UPDATE_STAGE_POSITION
+            pos = feature.stage_pos.value
             half_size_offset = self.cnvs.get_half_buffer_size()
 
             # convert physical position to buffer 'world' coordinates

@@ -248,7 +248,7 @@ class CryoZLocalizationController(object):
 
             # Update the feature Z pos, and move there
             feature = self._tab_data.main.currentFeature.value
-            feature.focus_pos.value["z"] = zpos
+            feature.focus_pos.value = {"z": zpos}
             if warning:
                 # Update the Z pos, but do not move there.
                 logging.warning("Z pos shift detected of %s, but not going there as it had warning %s", zshift, warning)

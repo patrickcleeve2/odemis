@@ -773,13 +773,6 @@ class ConvertStage(model.Actuator):
         vpos_dep = self._convertPosTodep(vpos, absolute=absolute)
         return {self._axes_dep["x"]: vpos_dep[0], self._axes_dep["y"]: vpos_dep[1]}
 
-    def convert_to_dependant_position(self, pos: dict):
-        """Convert position from the stage to the dependant stage. Always absolute"""
-        stage_pos = {"x": pos["y"], "y": pos["z"]}
-        dep_pos = self._get_pos_vector(stage_pos, absolute=True)   # this is to dep (bare) coordinates
-        dep_pos["x"] = pos["x"]               # update x position
-        return dep_pos
-
     @isasync
     def moveRel(self, shift, **kwargs):
         """
