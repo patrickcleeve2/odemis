@@ -248,7 +248,8 @@ class CryoGUIData(MicroscopyGUIData):
         current_feature = self.main.currentFeature.value
 
         def dist_to_pos(feature):
-            pos = feature.stage_pos.value
+            pm = self.main.posture_manager
+            pos = pm.from_dependant_position(feature.stage_pos.value)
             return math.hypot(pos["x"] - current_position["x"],
                               pos["y"] - current_position["y"])
 

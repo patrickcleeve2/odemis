@@ -297,6 +297,16 @@ class MeteorPostureManager(MicroscopePostureManager):
         # None of the above -> unknown position
         return UNKNOWN
 
+    def get_posture_orientation(self, posture: int) -> Dict[str, float]:
+        """Get the orientation of the stage for the given posture"""
+        stage_md = self.stage.getMetadata()
+        if posture == SEM_IMAGING:
+            return stage_md[model.MD_FAV_SEM_POS_ACTIVE]
+        elif posture == FM_IMAGING:
+            return stage_md[model.MD_FAV_FM_POS_ACTIVE]
+        elif posture == LOADING:
+            return stage_md[model.MD_FAV_POS_DEACTIVE]
+
     def getTargetPosition(self, target_pos_lbl: int) -> Dict[str, float]:
         """
         Returns the position that the stage would go to.
@@ -413,18 +423,40 @@ class MeteorPostureManager(MicroscopePostureManager):
         vpos_dep = self._convertPosTodep(vpos, absolute=absolute)
         return {self._axes_dep["x"]: vpos_dep[0], self._axes_dep["y"]: vpos_dep[1]}
 
-    def to_dependant_position(self, pos: Dict[str, float]) -> Dict[str, float]:
-        """Convert position dict from original axes to dependant axes with all axis values
-        :param pos: position dict with all axis values (x, y) in the original axes
-        :return: position dict with all axis values (x, y) in the dependant axes
-        """
-        vpos = self._get_pos_vector({"x": pos["y"], "y": pos["z"]}, absolute=True)
+
+    def to_dependant_move(self, pos: Dict[str, float]) -> Dict[str, float]:
+        """Convert position dict from original axes to dependant axes with original axes
+        :param pos: move dict with axis values (x, y, z) in the original axes. not all axes are required
+        :return: move dict with original axis values  in the dependant axes"""
+        # Convert position dict from original axes to dependant axes
+        vpos = self._get_pos_vector({"x": pos.get("y", 0), "y": pos.get("z", 0)}, absolute=False)
         
-        # NOTE: this really should have rx, rz
-        new_pos = pos.copy().update(vpos)
+        # return the new position
+        new_pos = pos.copy()
+        new_pos.update(vpos)
         return new_pos
 
-    def from_dependent_position(self, pos: Dict[str, float]) -> Dict[str, float]:
+    def to_dependant_position(self, pos: Dict[str, float], posture: int = None) -> Dict[str, float]:
+        """Convert position dict from original axes to dependant axes with all axis values
+        :param pos: position dict with all axis values (x, y) in the original axes
+        :param posture: (int) the posture of the stage
+        :return: position dict with all axis values (x, y) in the dependant axes
+        """
+        # Convert position dict from original axes to dependant axes
+        vpos = self._get_pos_vector({"x": pos["y"], "y": pos["z"]}, absolute=True)
+
+        # add rx, rz (orientation)
+        if posture is None:
+            posture = self.getCurrentPostureLabel()
+        orientation = self.get_posture_orientation(posture)
+
+        # return the new position
+        new_pos = pos.copy()
+        new_pos.update(orientation)
+        new_pos.update(vpos)
+        return new_pos
+
+    def from_dependant_position(self, pos: Dict[str, float]) -> Dict[str, float]:
         """Convert position dict from dependant axes to original axes with all axis values
         :param pos: position dict with all axis values (x, y, z) in the dependent axes
         :return: position dict with all axis values (x, y, z) in the original axes
@@ -432,9 +464,10 @@ class MeteorPostureManager(MicroscopePostureManager):
         # Convert position dict from dependant axes to original axes
         vpos = self._convertPosFromdep([pos[self._axes_dep["x"]], pos[self._axes_dep["y"]]])
         # remap vpos x, y -> stage y, z
-        vpos = {"y": vpos[0], "z": vpos[1]}
+        vpos = {self._axes_dep["x"]: vpos[0], self._axes_dep["y"]: vpos[1]}
 
-        new_pos = pos.copy().update(vpos)
+        new_pos = pos.copy()
+        new_pos.update(vpos)
         return new_pos
 
 class MeteorTFS1PostureManager(MeteorPostureManager):

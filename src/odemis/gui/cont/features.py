@@ -101,7 +101,7 @@ class CryoFeatureController(object):
 
         # move to feature position
         logging.info(f"Moving to position: {stage_pos}, focus: {focus_pos}")
-        self._main_data_model.stage.moveAbs(stage_pos)
+        pm.stage.moveAbs(stage_pos)
         self._main_data_model.focus.moveAbs(focus_pos)
 
     def _display_go_to_feature_warning(self) -> bool:

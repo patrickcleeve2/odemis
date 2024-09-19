@@ -63,11 +63,11 @@ class FeaturesDecoder(json.JSONDecoder):
         if 'name' in obj:
             stage_pos = obj['stage_pos']
             focus_pos = obj['focus_pos']
-            coordinate_system = obj['coordinate_system']
+            posture = obj['posture']
             feature = CryoFeature(name=obj['name'],
                                   stage_pos=stage_pos,
                                   focus_pos=focus_pos,
-                                  coordinate_system=coordinate_system)
+                                  posture=posture)
             feature.status.value = obj['status']
             return feature
         if 'feature_list' in obj:
