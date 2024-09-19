@@ -370,7 +370,7 @@ class MeteorPostureManager(MicroscopePostureManager):
         self._updateConversion()
 
     def _get_rot_matrix(self, invert=False):
-        
+
         rotation = self._metadata[model.MD_ROTATION_COR]
         if invert:
             rotation *= -1
@@ -430,7 +430,7 @@ class MeteorPostureManager(MicroscopePostureManager):
         :return: move dict with original axis values  in the dependant axes"""
         # Convert position dict from original axes to dependant axes
         vpos = self._get_pos_vector({"x": pos.get("y", 0), "y": pos.get("z", 0)}, absolute=False)
-        
+
         # return the new position
         new_pos = pos.copy()
         new_pos.update(vpos)
