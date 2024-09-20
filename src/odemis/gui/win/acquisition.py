@@ -35,7 +35,7 @@ from odemis import dataio, gui, model
 from odemis.acq import acqmng, path, stitching, stream
 from odemis.acq.stitching import (REGISTER_IDENTITY, WEAVER_MEAN,
                                   FocusingMethod, acquireOverview, 
-                                  get_tiled_areas, get_zstack_levels)
+                                  get_zstack_levels)
 from odemis.acq.stream import (NON_SPATIAL_STREAMS, EMStream, LiveStream,
                                OpticalStream, ScannedFluoStream, SEMStream, FIBStream)
 from odemis.gui.preset import (apply_preset, get_global_settings_entries,

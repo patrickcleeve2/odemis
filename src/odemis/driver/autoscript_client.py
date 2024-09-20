@@ -178,6 +178,18 @@ class SEM(model.HwComponent):
             self._fib_detector = Detector(parent=self, daemon=daemon, channel="ion", **ckwargs)
             self.children.value.add(self._fib_detector)
 
+    def get_software_version(self) -> str:
+        """Returns: (str) the software version of the microscope."""
+        with self._proxy_access:
+            self.server._pyroClaimOwnership()
+            return self.server.get_software_version()
+        
+    def get_hardware_version(self) -> str:
+        """Returns: (str) the hardware version of the microscope."""
+        with self._proxy_access:
+            self.server._pyroClaimOwnership()
+            return self.server.get_hardware_version()
+
     def list_available_channels(self) -> list:
         """List all available channels
         :return: (list) of available channels.
