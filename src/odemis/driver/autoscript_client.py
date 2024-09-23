@@ -1955,12 +1955,14 @@ class Stage(model.Actuator):
             Relative shift to move the stage to per axes in m for 'x', 'y', 'z' in rad for 'rx', 'rz'.
             Axes are 'x', 'y', 'z', 'rx' and 'rz'.
         """
+        coordinate_system = shift.get("coordinate_system", "RAW")
         if "coordinate_system" in shift:
-            shift.pop("coordinate_system") # TODO: better integrate with _checkMove, assume always RAW?
+            shift.pop("coordinate_system") # tmp remove to get around _checkMoveRel limitations
         if not shift:
             return model.InstantaneousFuture()
         self._checkMoveRel(shift)
         shift = self._applyInversion(shift)
+        # shift["coordinate_system"] = coordinate_system # restore #TODO: reenable
 
         f = self._createFuture()
         f = self._executor.submitf(f, self._doMoveRel, f, shift)
