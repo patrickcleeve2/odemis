@@ -1578,7 +1578,8 @@ class Detector(model.Detector):
             if self.parent.get_imaging_state(self._scanner.channel) == "Running":
                 logging.info(f"Imaging state is already running for channel {self._scanner.channel}")
                 return
-        except:
+        except Exception as e:
+            logging.error(f"Error when checking imaging state: {e}")
             pass
         self.parent.start_acquisition(self._scanner.channel)
 
@@ -1588,7 +1589,8 @@ class Detector(model.Detector):
             if self.parent.get_imaging_state(self._scanner.channel) == "Idle":
                 logging.info(f"Imaging state is already stopped for channel {self._scanner.channel}")
                 return
-        except:
+        except Exception as e:
+            logging.error(f"Error when checking imaging state: {e}")
             pass
 
         self.parent.stop_acquisition(self._scanner.channel, wait_for_frame=wait_for_frame)
