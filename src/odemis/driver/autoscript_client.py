@@ -218,6 +218,17 @@ class SEM(model.HwComponent):
             self.server._pyroClaimOwnership()
             self.server.move_stage_relative(position)
 
+    def move_stage_vertical(self, position: dict) -> None:
+        """
+        Move the stage vertically by the given relative position. This is blocking.
+        :param position: dict, relative position to move the stage to per axes in m.
+            Axes are 'x', 'z'. The units are meters for z.
+        """
+        with self._proxy_access:
+            self.server._pyroClaimOwnership()
+            self.server.move_stage_vertical(position)
+
+
     def stop_stage_movement(self):
         """Stop the movement of the stage."""
         with self._proxy_access:
@@ -1905,7 +1916,7 @@ class Stage(model.Actuator):
                 pos[an] = (pos[an] - rng[0]) % (2 * math.pi) + rng[0]
         return pos
 
-    def _moveTo(self, future, pos, rel=False, timeout=60):
+    def _moveTo(self, future, pos, rel=False, vertical: bool=False, timeout=60):
         with future._moving_lock:
             try:
                 if future._must_stop.is_set():
@@ -1921,7 +1932,10 @@ class Stage(model.Actuator):
                     pos["r"] = pos.pop("rz")
                 # movements are blocking
                 if rel:
-                    self.parent.move_stage_relative(pos)
+                    if vertical:
+                        self.parent.move_stage_vertical(pos)
+                    else:
+                        self.parent.move_stage_relative(pos)
                 else:
                     self.parent.move_stage_absolute(pos)
 
@@ -1935,16 +1949,16 @@ class Stage(model.Actuator):
                 # Update the position, even if the move didn't entirely succeed
                 self._updatePosition()
 
-    def _doMoveRel(self, future, shift):
+    def _doMoveRel(self, future: 'Future', shift: Dict[str, float], vertical: bool = False):
         """
         shift (dict): position in internal coordinates (ie, axes in the same
            direction as the hardware expects)
         """
         # We don't check the target position fit the range, the autoscript-adapter will take care of that
-        self._moveTo(future, shift, rel=True)
+        self._moveTo(future, shift, rel=True, vertical=vertical)
 
     @isasync
-    def moveRel(self, shift):
+    def moveRel(self, shift: Dict[str, float], vertical: bool = False):
         """
         Shift the stage the given position in meters. This is non-blocking.
         Throws an error when the requested position is out of range.
@@ -1955,17 +1969,15 @@ class Stage(model.Actuator):
             Relative shift to move the stage to per axes in m for 'x', 'y', 'z' in rad for 'rx', 'rz'.
             Axes are 'x', 'y', 'z', 'rx' and 'rz'.
         """
-        coordinate_system = shift.get("coordinate_system", "RAW")
         if "coordinate_system" in shift:
             shift.pop("coordinate_system") # tmp remove to get around _checkMoveRel limitations
         if not shift:
             return model.InstantaneousFuture()
         self._checkMoveRel(shift)
         shift = self._applyInversion(shift)
-        # shift["coordinate_system"] = coordinate_system # restore #TODO: reenable
 
         f = self._createFuture()
-        f = self._executor.submitf(f, self._doMoveRel, f, shift)
+        f = self._executor.submitf(f, self._doMoveRel, f, shift, vertical)
         return f
 
     def _doMoveAbs(self, future, pos):
