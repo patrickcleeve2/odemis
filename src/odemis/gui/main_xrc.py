@@ -109,7 +109,6 @@ class xrcfr_overview_acq(wx.Dialog):
         self.main_buttons = xrc.XRCCTRL(self, "main_buttons")
         self.scr_win_right = xrc.XRCCTRL(self, "scr_win_right")
         self.fp_settings_secom_optical = xrc.XRCCTRL(self, "fp_settings_secom_optical")
-        self.pnl_opt_streams = xrc.XRCCTRL(self, "pnl_opt_streams")
         self.pnl_secom_streams = xrc.XRCCTRL(self, "pnl_secom_streams")
         self.zstack_steps_label = xrc.XRCCTRL(self, "zstack_steps_label")
         self.zstack_steps = xrc.XRCCTRL(self, "zstack_steps")
@@ -766,6 +765,7 @@ class xrcpnl_tab_localization(wx.Panel):
         self.txt_cryosecom_left_time = xrc.XRCCTRL(self, "txt_cryosecom_left_time")
         self.btn_cryosecom_acqui_cancel = xrc.XRCCTRL(self, "btn_cryosecom_acqui_cancel")
         self.btn_acquire_overview = xrc.XRCCTRL(self, "btn_acquire_overview")
+        self.btn_acquire_features = xrc.XRCCTRL(self, "btn_acquire_features")
         self.pnl_cryosecom_acquired = xrc.XRCCTRL(self, "pnl_cryosecom_acquired")
         self.btn_mill_active_features = xrc.XRCCTRL(self, "btn_mill_active_features")
         self.txt_milling_est_time = xrc.XRCCTRL(self, "txt_milling_est_time")
@@ -1669,18 +1669,6 @@ b\xeb\x85\x9f\xb6B\x1d\x0cK\x17\xac\xf0\x12\xfe\xa0\xe5\xee\xe03\xb1\xfa\
                         <XRCED>
                           <assign_var>1</assign_var>
                         </XRCED>
-                      </object>
-                      <object class="FoldPanelItem">
-                        <object class="StreamBar" name="pnl_opt_streams">
-                          <fg>#7F7F7F</fg>
-                          <bg>#333333</bg>
-                          <XRCED>
-                            <assign_var>1</assign_var>
-                          </XRCED>
-                        </object>
-                        <nocaption>1</nocaption>
-                        <fg>#1A1A1A</fg>
-                        <bg>#555555</bg>
                       </object>
                       <object class="FoldPanelItem">
                         <object class="StreamBar" name="pnl_secom_streams">
@@ -9496,6 +9484,24 @@ D\xc48\xc6qd\x1b\xed\x886\x1a\xa5\x00\x00D0\xc6\x181?\x03\x96\xf6I\x16\
                                 <height>48</height>
                                 <face_colour>def</face_colour>
                                 <label>ACQUIRE OVERVIEW</label>
+                                <font>
+                                  <size>14</size>
+                                  <sysfont>wxSYS_DEFAULT_GUI_FONT</sysfont>
+                                </font>
+                                <style>wxALIGN_CENTRE</style>
+                                <XRCED>
+                                  <assign_var>1</assign_var>
+                                </XRCED>
+                              </object>
+                              <option>0</option>
+                              <flag>wxTOP|wxBOTTOM|wxLEFT</flag>
+                              <border>10</border>
+                            </object>
+                            <object class="sizeritem">
+                              <object class="ImageTextButton" name="btn_acquire_features">
+                                <height>48</height>
+                                <face_colour>def</face_colour>
+                                <label>ACQUIRE AT FEATURES</label>
                                 <font>
                                   <size>14</size>
                                   <sysfont>wxSYS_DEFAULT_GUI_FONT</sysfont>
