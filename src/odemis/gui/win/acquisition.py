@@ -58,7 +58,6 @@ from odemis.gui.util.widgets import (ProgressiveFutureConnector,
                                      VigilantAttributeConnector)
 from odemis.util import units
 from odemis.util.filename import create_filename, guess_pattern, update_counter
-from odemis.acq.stitching import get_tiled_areas, get_zstack_levels
 
 
 class AcquisitionDialog(xrcfr_acq):

@@ -693,6 +693,7 @@ class xrcpnl_tab_fibsem(wx.Panel):
         self.txt_cryosecom_left_time = xrc.XRCCTRL(self, "txt_cryosecom_left_time")
         self.btn_cryosecom_acqui_cancel = xrc.XRCCTRL(self, "btn_cryosecom_acqui_cancel")
         self.btn_acquire_overview = xrc.XRCCTRL(self, "btn_acquire_overview")
+        self.btn_acquire_features = xrc.XRCCTRL(self, "btn_acquire_features")
         self.fp_milling = xrc.XRCCTRL(self, "fp_milling")
         self.pnl_milling = xrc.XRCCTRL(self, "pnl_milling")
         self.milling_flex_grid_sizer = xrc.XRCCTRL(self, "milling_flex_grid_sizer")
@@ -8725,6 +8726,24 @@ b\xeb\x85\x9f\xb6B\x1d\x0cK\x17\xac\xf0\x12\xfe\xa0\xe5\xee\xe03\xb1\xfa\
                                 <height>48</height>
                                 <face_colour>def</face_colour>
                                 <label>ACQUIRE OVERVIEW</label>
+                                <font>
+                                  <size>14</size>
+                                  <sysfont>wxSYS_DEFAULT_GUI_FONT</sysfont>
+                                </font>
+                                <style>wxALIGN_CENTRE</style>
+                                <XRCED>
+                                  <assign_var>1</assign_var>
+                                </XRCED>
+                              </object>
+                              <option>0</option>
+                              <flag>wxTOP|wxBOTTOM|wxLEFT</flag>
+                              <border>10</border>
+                            </object>
+                            <object class="sizeritem">
+                              <object class="ImageTextButton" name="btn_acquire_features">
+                                <height>48</height>
+                                <face_colour>def</face_colour>
+                                <label>ACQUIRE AT FEATURES</label>
                                 <font>
                                   <size>14</size>
                                   <sysfont>wxSYS_DEFAULT_GUI_FONT</sysfont>

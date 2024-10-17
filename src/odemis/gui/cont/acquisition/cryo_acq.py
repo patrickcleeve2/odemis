@@ -39,7 +39,7 @@ import wx
 
 from odemis import dataio, model
 from odemis.acq import acqmng, stream
-from odemis.acq.feature import acquire_at_features, add_feature_info_to_filename
+from odemis.acq.feature import acquire_at_features, add_feature_info_to_filename, _create_fibsem_filename
 from odemis.acq.stream import BrightfieldStream, FluoStream, StaticStream
 from odemis.gui import conf
 from odemis.gui import model as guimod
@@ -407,31 +407,7 @@ class CryoAcquiController(object):
         data = future.result()
         self._display_acquired_data(data)
 
-    def _add_feature_info_filename(self, filename: str) -> str:
-        """
-        Add feature name, feature status and the counter at the end of the filename.
-        :param filename: filename given by user
-        """
-        path_base, ext = splitext(filename)
-        feature = self._tab_data.main.currentFeature.value
-        feature_name = feature.name.value
-        feature_status = feature.status.value
 
-        path, basename = os.path.split(path_base)
-        ptn = f"{basename}-{feature_name}-{feature_status}-{{cnt}}"
-
-        return create_filename(path, ptn, ext, count="001")
-
-    def _create_fibsem_filename(self, filename: str) -> str:
-        """
-        Create a filename for FIBSEM images.
-        :param filename: filename given by user
-        """
-        path_base, ext = splitext(filename)
-        path, basename = os.path.split(path_base)
-        ptn = f"{basename}-FIBSEM-{{cnt}}"
-
-        return create_filename(path, ptn, ext, count="001")
     
     def _create_cryo_filename(self, filename: str) -> str:
         """
@@ -440,9 +416,10 @@ class CryoAcquiController(object):
         """
         # TODO: consolidate the two methods into one
         if self.acqui_mode is AcquiMode.FLM:
-            filename = self._add_feature_info_filename(filename)
+            filename = add_feature_info_to_filename(feature=self._tab_data.main.currentFeature.value,
+                                        filename=filename)
         else:
-            filename = self._create_fibsem_filename(filename)
+            filename = _create_fibsem_filename(filename)
         
         return filename
 
@@ -454,8 +431,7 @@ class CryoAcquiController(object):
         """
         filename = self._filename.value
         if data:
-            filename = add_feature_info_to_filename(feature=self._tab_data.main.currentFeature.value,
-                                                 filename=filename)
+            filename = self._create_cryo_filename(filename)
             exporter = dataio.get_converter(self._config.last_format)
             exporter.export(filename, data, thumb_nail)
             logging.info(u"Acquisition saved as file '%s'.", filename)

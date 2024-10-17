@@ -1111,6 +1111,7 @@ class Scanner(model.Emitter):
 
         self._hfw_nomag = hfw_nomag
         self._has_detector = has_detector
+        self._acq_type = model.MD_AT_EM if channel == "electron" else model.MD_AT_FIB
 
         # dwell time
         dwell_time_info = self.parent.dwell_time_info(self.channel)
@@ -1528,11 +1529,14 @@ class Detector(model.Detector):
                         md[model.MD_BEAM_SHIFT] = self._scanner.shift.value
                     if hasattr(self._scanner, "horizontalFoV"):
                         md[model.MD_BEAM_FIELD_OF_VIEW] = self._scanner.horizontalFoV.value
+                    if hasattr(self._scanner, "_acq_type"):
+                        md[model.MD_ACQ_TYPE] = self._scanner._acq_type
+                    # TODO: these don't get saved with the image metadata...
 
                     stage = model.getComponent(role="stage-bare")
                     stage_position = stage.position.value
                     md[model.MD_STAGE_POSITION_RAW] = stage_position
-                    md[model.MD_POS] = (stage_position["x"], stage_position["y"])
+                    md[model.MD_POS] = (stage_position["x"], stage_position["y"]) # TODO: this should be sample-stage once merged
 
                     # Estimated time for an acquisition is the dwell time times the total amount of pixels in the image.
                     if hasattr(self._scanner, "dwellTime") and hasattr(self._scanner, "resolution"):
