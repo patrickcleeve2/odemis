@@ -58,6 +58,7 @@ from odemis.gui.util.widgets import (ProgressiveFutureConnector,
                                      VigilantAttributeConnector)
 from odemis.util import units
 from odemis.util.filename import create_filename, guess_pattern, update_counter
+from odemis.acq.stitching import get_tiled_areas, get_zstack_levels
 
 
 class AcquisitionDialog(xrcfr_acq):
@@ -658,7 +659,7 @@ class OverviewAcquisitionDialog(xrcfr_overview_acq):
             save_dir = self.conf.pj_last_path
 
         # feature flag to enable/disable FIBSEM mode (disabled until fibsem code is merged)
-        self.fibsem_mode = False # isinstance(orig_tab_data, guimodel.CryoFIBSEMGUIData)
+        self.fibsem_mode = isinstance(orig_tab_data, guimodel.CryoFIBSEMGUIData)
 
         # hide optical settings when in fibsem mode
         self.fp_settings_secom_optical.Show(not self.fibsem_mode)

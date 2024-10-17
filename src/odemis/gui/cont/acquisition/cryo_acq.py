@@ -33,7 +33,8 @@ import os
 from builtins import str
 from concurrent import futures
 from concurrent.futures._base import CancelledError
-
+from enum import Enum
+from typing import Union
 import wx
 
 from odemis import dataio, model
@@ -41,6 +42,7 @@ from odemis.acq import acqmng, stream
 from odemis.acq.feature import acquire_at_features, add_feature_info_to_filename
 from odemis.acq.stream import BrightfieldStream, FluoStream, StaticStream
 from odemis.gui import conf
+from odemis.gui import model as guimod
 from odemis.gui.cont.acquisition._constants import VAS_NO_ACQUISITION_EFFECT
 from odemis.gui.cont.acquisition.overview_stream_acq import (
     OverviewStreamAcquiController,
@@ -66,6 +68,10 @@ ST_CANCELED = "CANCELED"
 ODEMIS_ADVANCED_FLAG: bool = False
 
 
+class AcquiMode(Enum):
+    FLM = 1
+    FIBSEM = 2
+
 class CryoAcquiController(object):
     """
     Controller to handle the acquisitions of the cryo-secom
@@ -73,9 +79,22 @@ class CryoAcquiController(object):
     """
 
     def __init__(self, tab_data, panel, tab):
+        from odemis.gui.cont.tabs import FibsemTab, LocalizationTab # to avoid circular import
         self._panel = panel
-        self._tab_data = tab_data
-        self._tab = tab
+        self._tab_data: Union['guimod.CryoLocalizationGUIData', 'guimod.CryoFIBSEMGUIData'] = tab_data
+        self._tab: Union[LocalizationTab, FibsemTab] = tab
+
+        if not isinstance(
+            self._tab_data, (guimod.CryoLocalizationGUIData, guimod.CryoFIBSEMGUIData)
+        ):
+            raise ValueError(
+                f"The CryoAcquiController is not compatible with the given tab_data : {self._tab_data}"
+            )
+        self.acqui_mode = (
+            AcquiMode.FLM
+            if isinstance(self._tab_data, guimod.CryoLocalizationGUIData)
+            else AcquiMode.FIBSEM
+        )
 
         self.overview_acqui_controller = OverviewStreamAcquiController(
             self._tab_data, self._tab
@@ -158,6 +177,28 @@ class CryoAcquiController(object):
         # advanced features toggle
         self._panel.btn_acquire_features.Show(ODEMIS_ADVANCED_FLAG)
 
+        # hide z-stack controls for fibsem
+        if self.acqui_mode is AcquiMode.FIBSEM:
+            self._panel.z_stack_chkbox.Hide()
+            self._panel.param_Zmin.Hide()
+            self._panel.param_Zmin_label.Hide()
+            self._panel.param_Zmax.Hide()
+            self._panel.param_Zmax_label.Hide()
+            self._panel.param_Zstep.Hide()
+            self._panel.param_Zstep_label.Hide()
+            self._panel.Layout()
+
+        # hide z-stack controls for fibsem
+        if self.acqui_mode is AcquiMode.FIBSEM:
+            self._panel.z_stack_chkbox.Hide()
+            self._panel.param_Zmin.Hide()
+            self._panel.param_Zmin_label.Hide()
+            self._panel.param_Zmax.Hide()
+            self._panel.param_Zmax_label.Hide()
+            self._panel.param_Zstep.Hide()
+            self._panel.param_Zstep_label.Hide()
+            self._panel.Layout()
+
     @call_in_wx_main
     def _on_acquisition(self, is_acquiring: bool):
         """
@@ -230,8 +271,9 @@ class CryoAcquiController(object):
         Called when the acquisition process is
         done, failed or canceled
         """
-        local_tab = self._tab_data.main.getTabByName("cryosecom-localization")
-        local_tab.tab_data_model.select_current_position_feature()
+        if self.acqui_mode is AcquiMode.FLM:
+            self._tab.tab_data_model.select_current_position_feature()
+
         self._acq_future = None
         self._gauge_future_conn = None
         self._tab_data.main.is_acquiring.value = False
@@ -351,9 +393,9 @@ class CryoAcquiController(object):
         """
         Shows the acquired image on the view
         """
-        # get the localization tab
-        local_tab = self._tab_data.main.getTabByName("cryosecom-localization")
-        local_tab.display_acquired_data(data)
+        # Q: do we want FIBSEM images to show in the localization tab?
+        if self.acqui_mode is AcquiMode.FLM:
+            self._tab.display_acquired_data(data)
 
     @call_in_wx_main
     def _on_export_data_done(self, future):
@@ -364,6 +406,45 @@ class CryoAcquiController(object):
         self._update_acquisition_time()
         data = future.result()
         self._display_acquired_data(data)
+
+    def _add_feature_info_filename(self, filename: str) -> str:
+        """
+        Add feature name, feature status and the counter at the end of the filename.
+        :param filename: filename given by user
+        """
+        path_base, ext = splitext(filename)
+        feature = self._tab_data.main.currentFeature.value
+        feature_name = feature.name.value
+        feature_status = feature.status.value
+
+        path, basename = os.path.split(path_base)
+        ptn = f"{basename}-{feature_name}-{feature_status}-{{cnt}}"
+
+        return create_filename(path, ptn, ext, count="001")
+
+    def _create_fibsem_filename(self, filename: str) -> str:
+        """
+        Create a filename for FIBSEM images.
+        :param filename: filename given by user
+        """
+        path_base, ext = splitext(filename)
+        path, basename = os.path.split(path_base)
+        ptn = f"{basename}-FIBSEM-{{cnt}}"
+
+        return create_filename(path, ptn, ext, count="001")
+    
+    def _create_cryo_filename(self, filename: str) -> str:
+        """
+        Create a filename for cryo images depending on mode.
+        :param filename: filename given by user
+        """
+        # TODO: consolidate the two methods into one
+        if self.acqui_mode is AcquiMode.FLM:
+            filename = self._add_feature_info_filename(filename)
+        else:
+            filename = self._create_fibsem_filename(filename)
+        
+        return filename
 
     def _export_data(self, data, thumb_nail):
         """
