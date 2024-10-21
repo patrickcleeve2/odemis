@@ -25,7 +25,7 @@ import queue
 import threading
 import time
 from concurrent.futures import CancelledError
-from typing import Optional, Union, Dict, List, Tuple
+from typing import Optional, Union, Dict, List, Tuple, Any
 
 import msgpack # only used for debug information
 import msgpack_numpy
@@ -218,17 +218,6 @@ class SEM(model.HwComponent):
             self.server._pyroClaimOwnership()
             self.server.move_stage_relative(position)
 
-    def move_stage_vertical(self, position: dict) -> None:
-        """
-        Move the stage vertically by the given relative position. This is blocking.
-        :param position: dict, relative position to move the stage to per axes in m.
-            Axes are 'x', 'z'. The units are meters for z.
-        """
-        with self._proxy_access:
-            self.server._pyroClaimOwnership()
-            self.server.move_stage_vertical(position)
-
-
     def stop_stage_movement(self):
         """Stop the movement of the stage."""
         with self._proxy_access:
@@ -402,22 +391,6 @@ class SEM(model.HwComponent):
             self.server._pyroClaimOwnership()
             return self.server.scan_mode_info(channel)
 
-    def set_selected_area(self, reduced_area: dict, channel: str) -> None:
-        """
-        Specify a selected area in the scan field area.
-        :param reduced_area: (dict) the reduced area (left, top, width, height) as % of image (0 - 1).
-        :param channel: (str) Name of the channel to set the reduced area for.
-        """
-        with self._proxy_access:
-            self.server._pyroClaimOwnership()
-            self.server.set_reduced_area(reduced_area, channel)
-
-    def reset_reduced_area(self, channel: str) -> None:
-        """Reset the selected area to select the entire image."""
-        with self._proxy_access:
-            self.server._pyroClaimOwnership()
-            self.server.reset_reduced_area()
-
     def set_spotsize(self, spotsize: float, channel: str) -> None:
         """
         Setting the spot size of the selected beam.
@@ -461,16 +434,16 @@ class SEM(model.HwComponent):
             self.server._pyroClaimOwnership()
             return self.server.dwell_time_info(channel)
 
-    def set_field_of_view(self, value: float, channel: str) -> None:
+    def set_field_of_view(self, field_of_view: float, channel: str) -> None:
         """
         Set the field of view.
-        :param value: (float) the field of view in meters.
+        :param field_of_view: (float) the field of view in meters.
         :param channel: (str) Name of the channel to set the field of view for.
         :return: None
         """
         with self._proxy_access:
             self.server._pyroClaimOwnership()
-            self.server.set_field_of_view(value, channel)
+            self.server.set_field_of_view(field_of_view, channel)
 
     def get_field_of_view(self, channel: str) -> float:
         """
@@ -856,7 +829,7 @@ class SEM(model.HwComponent):
             self.server._pyroClaimOwnership()
             self.server.set_active_device(device)
 
-    def acquire_image(self, channel: str ) -> numpy.ndarray:
+    def acquire_image(self, channel: str ) -> Tuple[numpy.ndarray, Dict[str, Any]]:
         """
         Acquire an image from the detector (blocking).
         :param channel: (str) Name of one of the channels.
@@ -948,55 +921,55 @@ class SEM(model.HwComponent):
 
 #### MILLING CONTROL
 
-    def create_rectangle(self, pattern_dict: dict) -> dict:
+    def create_rectangle(self, parameters: dict) -> dict:
         """
         Create a rectangle milling pattern.
-        :param pattern_dict: (dict) Dictionary containing the pattern parameters.
+        :param parameters: (dict) Dictionary containing the pattern parameters.
         :return: (dict) Dictionary containing the pattern parameters.
         """
         with self._proxy_access:
             self.server._pyroClaimOwnership()
-            return self.server.create_rectangle(pattern_dict)
+            return self.server.create_rectangle(parameters)
 
-    def create_cleaning_cross_section(self, pattern_dict: dict) -> dict:
+    def create_cleaning_cross_section(self, parameters: dict) -> dict:
         """
         Create a cleaning cross section milling pattern.
-        :param pattern_dict: (dict) Dictionary containing the pattern parameters.
+        :param parameters: (dict) Dictionary containing the pattern parameters.
         :return: (dict) Dictionary containing the pattern parameters.
         """
         with self._proxy_access:
             self.server._pyroClaimOwnership()
-            return self.server.create_cleaning_cross_section(pattern_dict)
+            return self.server.create_cleaning_cross_section(parameters)
 
-    def create_regular_cross_section(self, pattern_dict: dict) -> dict:
+    def create_regular_cross_section(self, parameters: dict) -> dict:
         """
         Create a regular cross section milling pattern.
-        :param pattern_dict: (dict) Dictionary containing the pattern parameters.
+        :param parameters: (dict) Dictionary containing the pattern parameters.
         :return: (dict) Dictionary containing the pattern parameters.
         """
         with self._proxy_access:
             self.server._pyroClaimOwnership()
-            return self.server.create_regular_cross_section(pattern_dict)
+            return self.server.create_regular_cross_section(parameters)
 
-    def create_line(self, pattern_dict: dict) -> dict:
+    def create_line(self, parameters: dict) -> dict:
         """
         Create a line milling pattern.
-        :param pattern_dict: (dict) Dictionary containing the pattern parameters.
+        :param parameters: (dict) Dictionary containing the pattern parameters.
         :return: (dict) Dictionary containing the pattern parameters.
         """
         with self._proxy_access:
             self.server._pyroClaimOwnership()
-            return self.server.create_line(pattern_dict)
+            return self.server.create_line(parameters)
 
-    def create_circle(self, pattern_dict: dict) -> dict:
+    def create_circle(self, parameters: dict) -> dict:
         """
         Create a circle milling pattern.
-        :param pattern_dict: (dict) Dictionary containing the pattern parameters.
+        :param parameters: (dict) Dictionary containing the pattern parameters.
         :return: (dict) Dictionary containing the pattern parameters.
         """
         with self._proxy_access:
             self.server._pyroClaimOwnership()
-            return self.server.create_circle(pattern_dict)
+            return self.server.create_circle(parameters)
 
     def start_milling(self) -> None:
         """Start the milling. This is non-blocking"""
@@ -1552,8 +1525,8 @@ class Detector(model.Detector):
                         break
 
                     # Retrieve the image (scans image, blocks until the image is received)
-                    image = self.parent.acquire_image(self._scanner.channel)
-
+                    # TODO: use the metadata from the image acquisition _md once it's available
+                    image, _md = self.parent.acquire_image(self._scanner.channel)
                     # non-blocking acquisition (disabled until hw testing)
                     # logging.debug("Starting one image acquisition")
 
@@ -1920,7 +1893,7 @@ class Stage(model.Actuator):
                 pos[an] = (pos[an] - rng[0]) % (2 * math.pi) + rng[0]
         return pos
 
-    def _moveTo(self, future, pos, rel=False, vertical: bool=False, timeout=60):
+    def _moveTo(self, future, pos, rel=False, timeout=60):
         with future._moving_lock:
             try:
                 if future._must_stop.is_set():
@@ -1936,10 +1909,7 @@ class Stage(model.Actuator):
                     pos["r"] = pos.pop("rz")
                 # movements are blocking
                 if rel:
-                    if vertical:
-                        self.parent.move_stage_vertical(pos)
-                    else:
-                        self.parent.move_stage_relative(pos)
+                    self.parent.move_stage_relative(pos)
                 else:
                     self.parent.move_stage_absolute(pos)
 
@@ -1953,16 +1923,16 @@ class Stage(model.Actuator):
                 # Update the position, even if the move didn't entirely succeed
                 self._updatePosition()
 
-    def _doMoveRel(self, future: 'Future', shift: Dict[str, float], vertical: bool = False):
+    def _doMoveRel(self, future: 'Future', shift: Dict[str, float]):
         """
         shift (dict): position in internal coordinates (ie, axes in the same
            direction as the hardware expects)
         """
         # We don't check the target position fit the range, the autoscript-adapter will take care of that
-        self._moveTo(future, shift, rel=True, vertical=vertical)
+        self._moveTo(future, shift, rel=True)
 
     @isasync
-    def moveRel(self, shift: Dict[str, float], vertical: bool = False):
+    def moveRel(self, shift: Dict[str, float]):
         """
         Shift the stage the given position in meters. This is non-blocking.
         Throws an error when the requested position is out of range.
