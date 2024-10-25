@@ -45,6 +45,7 @@ from odemis.gui.model._constants import (
     TOOL_POINT,
     TOOL_RO_ANCHOR,
     TOOL_ROA,
+    TOOL_RECTANGLE,
     TOOL_RULER,
     TOOL_SPOT,
     VIEW_LAYOUT_22,

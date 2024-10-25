@@ -36,6 +36,7 @@ def get_resources():
 
 
 
+
 class xrcfr_acq(wx.Dialog):
 #!XRCED:begin-block:xrcfr_acq.PreCreate
     def PreCreate(self, *args):
@@ -730,6 +731,7 @@ class xrcpnl_tab_fibsem(wx.Panel):
         self.btn_cryosecom_acqui_cancel = xrc.XRCCTRL(self, "btn_cryosecom_acqui_cancel")
         self.btn_acquire_overview = xrc.XRCCTRL(self, "btn_acquire_overview")
         self.btn_acquire_features = xrc.XRCCTRL(self, "btn_acquire_features")
+        self.chk_use_autofocus_acquire_features = xrc.XRCCTRL(self, "chk_use_autofocus_acquire_features")
         self.fp_milling = xrc.XRCCTRL(self, "fp_milling")
         self.pnl_milling = xrc.XRCCTRL(self, "pnl_milling")
         self.milling_flex_grid_sizer = xrc.XRCCTRL(self, "milling_flex_grid_sizer")
@@ -7840,7 +7842,7 @@ b\xeb\x85\x9f\xb6B\x1d\x0cK\x17\xac\xf0\x12\xfe\xa0\xe5\xee\xe03\xb1\xfa\
                     </object>
                     <option>1</option>
                     <flag>wxEXPAND</flag>
-                  </object> 
+                  </object>
                 </object>
               </object>
               <flag>wxEXPAND</flag>
@@ -8992,6 +8994,19 @@ b\xeb\x85\x9f\xb6B\x1d\x0cK\x17\xac\xf0\x12\xfe\xa0\xe5\xee\xe03\xb1\xfa\
                               </object>
                               <option>0</option>
                               <flag>wxTOP|wxBOTTOM|wxLEFT</flag>
+                              <border>10</border>
+                            </object>
+                            <object class="sizeritem">
+                              <object class="wxCheckBox" name="chk_use_autofocus_acquire_features">
+                                <label>Use AutoFocus</label>
+                                <fg>#E5E5E5</fg>
+                                <checked>0</checked>
+                                <flag>wxVERTICAL</flag>
+                                <border>10</border>
+                                <XRCED>
+                                  <assign_var>1</assign_var>
+                                </XRCED>
+                              </object>
                               <border>10</border>
                             </object>
                             <orient>wxVERTICAL</orient>
