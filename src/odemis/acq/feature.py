@@ -164,6 +164,16 @@ def add_feature_info_to_filename(feature: CryoFeature, filename: str) -> str:
 
     return create_filename(path, ptn, ext, count="001")
 
+def _create_fibsem_filename(filename: str) -> str:
+    """
+    Create a filename for FIBSEM images.
+    :param filename: filename given by user
+    """
+    path_base, ext = splitext(filename)
+    path, basename = os.path.split(path_base)
+    ptn = f"{basename}-FIBSEM-{{cnt}}"
+
+    return create_filename(path, ptn, ext, count="001")
 
 # To handle the timeout error when the stage is not able to move to the desired position
 # It logs the message and raises the MoveError exception
