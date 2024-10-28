@@ -2156,13 +2156,16 @@ class SampleStage(model.Actuator):
         self.position._set_value(pos, force_write=True)
 
         # update related MDs
-        affects = ["ccd", "e-beam"] # roles
+        affects = ["ccd", "e-beam", "ion-beam"] # roles
         for a in affects:
             try:
                 comp = model.getComponent(role=a)
                 if comp:
                     md_pos = pos.get("x", 0), pos.get("y", 0)
-                    comp.updateMetadata({model.MD_POS: md_pos})
+                    comp.updateMetadata({
+                        model.MD_POS: md_pos,
+                        model.MD_STAGE_POSITION_RAW: pos_dep}
+                        )
             except Exception as e:
                 logging.error("Failed to update %s with new position: %s", a, e)
 

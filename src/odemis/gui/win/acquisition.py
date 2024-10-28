@@ -794,7 +794,7 @@ class OverviewAcquisitionDialog(xrcfr_overview_acq):
         # High overlap percentage is not required as the stitching is based only on stage position,
         # independent of the image content. It just needs to be big enough to make sure that even with some stage
         # imprecision, all the tiles will overlap or at worse be next to each other (i.e. , no space between tiles)
-        self.overlap = 0.0
+        self.overlap = 0.1
         try:
             if self.fibsem_mode:
                 self.stage = self._main_data_model.stage
@@ -806,7 +806,8 @@ class OverviewAcquisitionDialog(xrcfr_overview_acq):
                 # In FIBSEM mode, we don't have autofocus because of how the overview code currently works
                 self.autofocus_chkbox.Hide()
                 self.autofocus_roi_ckbox.value = False
-
+                self.focus_points_dist_ctrl.Hide()
+                self.focus_points_dist_lbl.Hide()
             else:
                 self.stage = self._main_data_model.stage
                 self.focuser = self._main_data_model.focus

@@ -523,7 +523,7 @@ class CryoMainGUIData(MainGUIData):
         # stage.MD_SAMPLE_CENTERS contains the date in almost the right format, but the
         # position is a dict instead of a tuple. => Convert it, while checking the data.
         # Ex: {"grid 1": {"x": 0.1, "y": -0.2}} -> {"grid 1": (0.1, -0.2)}
-        sample_centers_raw = self.stage_bare.getMetadata().get(model.MD_SAMPLE_CENTERS)
+        sample_centers_raw = None #self.stage_bare.getMetadata().get(model.MD_SAMPLE_CENTERS)
         
         # TODO: on the METEOR, the MD_SAMPLE_CENTERS is on the stage-bare, in
         # the stage-bare coordinates (SEM). To display them, we'd need to

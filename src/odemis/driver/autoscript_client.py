@@ -1512,13 +1512,9 @@ class Detector(model.Detector):
                         md[model.MD_ACQ_TYPE] = self._scanner._acq_type
                     # TODO: these don't get saved with the image metadata...
 
-                    stage = model.getComponent(role="stage-bare")
-                    stage_position = stage.position.value
-                    md[model.MD_STAGE_POSITION_RAW] = stage_position
-
-                    pos = self.pm.to_sample_stage_from_stage_position(stage_position)                
-                    md[model.MD_POS] = (pos["x"], pos["y"]) # TODO: this should be sample-stage once merged
-                    
+                    # NOTE: the stage metadata is late when acquiring an overview (it is for the previous tile)
+                    # we need to do some kind of synchronization to get the right stage position
+                    time.sleep(0.2) # TODO: do something more intelligent
 
                     # Estimated time for an acquisition is the dwell time times the total amount of pixels in the image.
                     if hasattr(self._scanner, "dwellTime") and hasattr(self._scanner, "resolution"):
