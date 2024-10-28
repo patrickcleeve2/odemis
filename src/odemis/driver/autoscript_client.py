@@ -1951,7 +1951,7 @@ class Stage(model.Actuator):
         shift = self._applyInversion(shift)
 
         f = self._createFuture()
-        f = self._executor.submitf(f, self._doMoveRel, f, shift, vertical)
+        f = self._executor.submitf(f, self._doMoveRel, f, shift)
         return f
 
     def _doMoveAbs(self, future, pos):
