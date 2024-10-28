@@ -3,7 +3,7 @@
 # python server_sim_autoscript.py sim
 # the server will be started, and listening on localhost:4242
 
-METEOR-Sim: {
+METEOR-FIBSEM-Sim: {
     class: Microscope,
     role: meteor,
     children: [
@@ -80,49 +80,49 @@ METEOR-Sim: {
     },
     metadata: {
         # Loading position:
-        FAV_POS_DEACTIVE: { 'rx': 0, 'rz': 1.9076449, 'x': -0.01529, 'y': 0.0506, 'z': 0.01975 },
+        FAV_POS_DEACTIVE: { 'rx': 0, 'rz': 1.9076449, 'x': -0.01529, 'y': 0.0506, 'z': 29.e-3 },
         # XYZ ranges for SEM & METEOR
-        SEM_IMAGING_RANGE: {"x": [-10.e-3, 10.e-3], "y": [-5.e-3, 10.e-3], "z": [-0.5e-3, 8.e-3]},
-        FM_IMAGING_RANGE: {"x": [0.040, 0.054], "y": [-5.e-3, 10.e-3], "z": [-0.5e-3, 8.e-3]},
+        SEM_IMAGING_RANGE: {"x": [-10.e-3, 10.e-3], "y": [-30.e-3, 25.e-3], "z": [15.e-3, 37.e-3]},
+        FM_IMAGING_RANGE: {"x": [0.040, 0.054], "y": [-30.e-3, 25.e-3], "z": [15.e-3, 34.e-3]},
         # Grid centers in SEM range
         # Adjusted so that at init (0,0,0), it's at the Grid 1.
-        SAMPLE_CENTERS: {"GRID 1": {'x': 0, 'y': 2.46e-3, 'z': 0}, "GRID 2": {'x': 2.98e-3, 'y': 2.46e-3, 'z': 0}},
+        SAMPLE_CENTERS: {"GRID 1": {'x': 0, 'y': 0, 'z': 32.e-3}, "GRID 2": {'x': 5.0e-3, 'y': 0, 'z': 32.e-3}},
         # Mirroring values between SEM - METEOR
-        POS_COR: [0.02647, -0.000017],
-        # Active tilting (rx) & rotation (rz) angles positions when switching between SEM & FM, in radians.
-        # Note: these values are calibrated at installation time.
-        FAV_FM_POS_ACTIVE: {"rx": 0.12213888553625313  , "rz":  5.06145}, # 7° - 270°
-        # Typically rz = 110°, but we make it 0 so that at init it looks like in SEM position
-        FAV_SEM_POS_ACTIVE: {"rx": 0, "rz": 0}    # Note that milling angle (rx) can be changed per session 
+        POS_COR: [0.0253126, 0.0024916],
+        CALIB: {"version": "tfs_2", 
+                "Sample pre-tilt":  0.6108652381980153},  # 35°
+        FAV_FM_POS_ACTIVE: {"rx": 0.12213888553625313  , "rz":  3.141592653589793}, # 7° - 270°
+        FAV_SEM_POS_ACTIVE: {"rx": 0.6108652381980153, "rz": 0},  # pre-tilt 35°
+        FAV_MILL_POS_ACTIVE: {"rx": 0.314159, "rz": 0},    # Note that milling angle (rx) can be changed per session  
     },
 }
 
-"Linked YZ": {
-    class: actuator.ConvertStage,
-    role: null,
-    dependencies: {
-        "under": "Stage"
-    },
-    init: {
-      axes: [ "y", "z" ], # name of the axes in the dependency, mapped to x,y (if identity transformation)
-      rotation: -0.8034946943806713, # rad , -45°
-    },
-}
+# "Linked YZ": {
+#     class: actuator.ConvertStage,
+#     role: null,
+#     dependencies: {
+#         "under": "Stage"
+#     },
+#     init: {
+#       axes: [ "y", "z" ], # name of the axes in the dependency, mapped to x,y (if identity transformation)
+#       rotation: -0.8034946943806713, # rad , -45°
+#     },
+# }
 
-"Meteor Stage": {
-    class: actuator.MultiplexActuator,
-    role: stage,
-    dependencies: { "x": "Stage", "y": "Linked YZ", "z": "Linked YZ", },
-    init: {
-        axes_map: { "x": "x", "y": "x", "z": "y",},
-    },
-    affects: ["Camera", "EBeam"],
-    metadata: {
-        # Typically, x range is the same as FM_IMAGING_RANGE, and Y has to be converted
-        # POS_ACTIVE_RANGE: {"x": [0.040, 0.054], "y": [-10.e-3, 20.e-3]}
-        POS_ACTIVE_RANGE: {"x":[37.e-3, 59.e-3], "y": [-15.e-3, 6.e-3]}
-    },
-}
+# "Meteor Stage": {
+#     class: actuator.MultiplexActuator,
+#     role: stage,
+#     dependencies: { "x": "Stage", "y": "Linked YZ", "z": "Linked YZ", },
+#     init: {
+#         axes_map: { "x": "x", "y": "x", "z": "y",},
+#     },
+#     affects: ["Camera", "EBeam"],
+#     metadata: {
+#         # Typically, x range is the same as FM_IMAGING_RANGE, and Y has to be converted
+#         # POS_ACTIVE_RANGE: {"x": [0.040, 0.054], "y": [-10.e-3, 20.e-3]}
+#         POS_ACTIVE_RANGE: {"x":[37.e-3, 59.e-3], "y": [-15.e-3, 6.e-3]}
+#     },
+# }
 
 "Light Source": {
     class: omicronxx.HubxX,

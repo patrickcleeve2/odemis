@@ -204,7 +204,7 @@ class FibsemTab(Tab):
             (viewports[0],  # focused view
              {
                 "cls": guimod.MicroscopeView,
-                "stage": main_data.stage_bare,
+                "stage": main_data.stage,
                 "name": "SEM",
                 "stream_classes": SEMStream,
               }),
@@ -212,19 +212,19 @@ class FibsemTab(Tab):
              {
                 "cls": guimod.MicroscopeView,
                 "name": "FIB",
-                "stage": main_data.stage_bare,
+                "stage": main_data.stage,
                 "stream_classes": FIBStream,
               }),
             (viewports[2],
              {"name": "Overview",
               "cls": guimod.FeatureOverviewView,
-              "stage": main_data.stage_bare,
+              "stage": main_data.stage,
               "stream_classes": StaticSEMStream,
               }),
             (viewports[3],
              {"name": "Live",
               "cls": guimod.MicroscopeView,
-              "stage": main_data.stage_bare,
+              "stage": main_data.stage,
               "stream_classes": LiveStream,
               }),
         ])

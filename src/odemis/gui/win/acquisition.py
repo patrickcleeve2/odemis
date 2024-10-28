@@ -794,10 +794,10 @@ class OverviewAcquisitionDialog(xrcfr_overview_acq):
         # High overlap percentage is not required as the stitching is based only on stage position,
         # independent of the image content. It just needs to be big enough to make sure that even with some stage
         # imprecision, all the tiles will overlap or at worse be next to each other (i.e. , no space between tiles)
-        self.overlap = 0.10
+        self.overlap = 0.0
         try:
             if self.fibsem_mode:
-                self.stage = self._main_data_model.stage_bare
+                self.stage = self._main_data_model.stage
                 self.focuser = self._main_data_model.ebeam_focus
                 self.detector = self._main_data_model.sed
                 self.settings_obs = self._main_data_model.settings_obs

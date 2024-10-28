@@ -319,7 +319,7 @@ class MainGUIData(object):
             elif self.role == "mbsem":
                 required_roles += ["e-beam", "stage"]
 
-            if microscope.name == "METEOR TFSv2" and self.role == "meteor":
+            if microscope.name in ["METEOR TFSv2", "METEOR-FIBSEM-Sim"] and self.role == "meteor":
                 # remove stage from required roles for METEOR TFSv2
                 required_roles.remove("stage")
 
