@@ -1407,6 +1407,8 @@ class Detector(model.Detector):
         self.data = SEMDataFlow(self)
         self.channel = channel
 
+
+
         if self.channel == "electron":
             self._scanner = self.parent._scanner
         elif self.channel == "ion":
@@ -1476,6 +1478,10 @@ class Detector(model.Detector):
         Acquisition thread
         Managed via the ._genmsg Queue
         """
+        # TODO: remove once updating metadata correctly.
+        from odemis.acq.move import MicroscopePostureManager
+        self.pm = MicroscopePostureManager(model.getMicroscope())
+        
         try:
             while True:
                 # Wait until we have a start (or terminate) message
@@ -1509,7 +1515,10 @@ class Detector(model.Detector):
                     stage = model.getComponent(role="stage-bare")
                     stage_position = stage.position.value
                     md[model.MD_STAGE_POSITION_RAW] = stage_position
-                    md[model.MD_POS] = (stage_position["x"], stage_position["y"]) # TODO: this should be sample-stage once merged
+
+                    pos = self.pm.to_sample_stage_from_stage_position(stage_position)                
+                    md[model.MD_POS] = (pos["x"], pos["y"]) # TODO: this should be sample-stage once merged
+                    
 
                     # Estimated time for an acquisition is the dwell time times the total amount of pixels in the image.
                     if hasattr(self._scanner, "dwellTime") and hasattr(self._scanner, "resolution"):
