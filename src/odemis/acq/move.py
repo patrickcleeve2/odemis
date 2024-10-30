@@ -841,7 +841,7 @@ class MeteorTFS2PostureManager(MeteorTFS1PostureManager):
     def create_sample_stage(self):
         self.sample_stage = SampleStage(name="Sample Stage",
                                         role="stage",
-                                        stage_bare = self.stage,
+                                        stage_bare=self.stage,
                                         posture_manager=self)
 
 class MeteorZeiss1PostureManager(MeteorPostureManager):
