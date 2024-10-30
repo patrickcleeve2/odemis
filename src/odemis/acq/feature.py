@@ -29,8 +29,9 @@ from odemis.util.driver import estimate_stage_movement_time
 from odemis.util.filename import create_filename
 
 # The current state of the feature
-FEATURE_ACTIVE, FEATURE_ROUGH_MILLED, FEATURE_POLISHED, FEATURE_DEACTIVE = (
+FEATURE_ACTIVE, FEATURE_READY_FOR_MILLING, FEATURE_ROUGH_MILLED, FEATURE_POLISHED, FEATURE_DEACTIVE = (
     "Active",
+    "Ready for Milling",
     "Rough Milled",
     "Polished",
     "Discarded",

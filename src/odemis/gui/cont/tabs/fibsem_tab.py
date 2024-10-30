@@ -264,6 +264,11 @@ class FibsemTab(Tab):
         if bbox[0] is not None:
             self.panel.vp_secom_bl.canvas.fit_to_bbox(bbox)
 
+        # sync overview streams with correlation tab
+        if len(streams) > 0 and self.main_data.role == "meteor":
+            correlation_tab = self.main_data.getTabByName("meteor-correlation")
+            correlation_tab.correlation_controller.add_streams(streams)
+
     # def reset_live_streams(self):
     #     """
     #     Clear the content of the live streams. So the streams and their settings
