@@ -27,6 +27,7 @@ from odemis.util.comp import generate_zlevels
 from odemis.util.dataio import data_to_static_streams, open_acquisition, splitext
 from odemis.util.driver import estimate_stage_movement_time
 from odemis.util.filename import create_filename
+from odemis.acq.milling.tasks import MillingTaskSettings
 
 # The current state of the feature
 FEATURE_ACTIVE, FEATURE_READY_FOR_MILLING, FEATURE_ROUGH_MILLED, FEATURE_POLISHED, FEATURE_DEACTIVE = (
@@ -56,6 +57,7 @@ class CryoFeature(object):
         self.fm_focus_position = model.VigilantAttribute(fm_focus_position, unit="m")
         self.posture = model.StringVA(posture)
         self.posture_positions: Dict[str, Dict[str, float]] = {} # positions for each posture
+        self.milling_tasks: Dict[str, MillingTaskSettings] = {}
 
         self.status = model.StringVA(FEATURE_ACTIVE)
         # TODO: Handle acquired files
@@ -75,7 +77,9 @@ def get_features_dict(features: List[CryoFeature]) -> Dict[str, str]:
                         'stage_position': feature.stage_position.value,
                         'fm_focus_position': feature.fm_focus_position.value,
                         'posture': feature.posture.value,
-                        'posture_positions': feature.posture_positions}
+                        'posture_positions': feature.posture_positions,
+                        "milling_tasks": {k: v.to_json() for k, v in feature.milling_tasks.items()},
+                        }
         flist.append(feature_item)
     return {'feature_list': flist}
 
@@ -95,12 +99,14 @@ class FeaturesDecoder(json.JSONDecoder):
             fm_focus_position = obj['fm_focus_position']
             posture = obj['posture']
             posture_positions = obj.get('posture_positions', {})
+            milling_task_json = obj.get('milling_tasks', {})
             feature = CryoFeature(name=obj['name'],
                                   stage_position=stage_position,
                                   fm_focus_position=fm_focus_position,
                                   posture=posture)
             feature.status.value = obj['status']
             feature.posture_positions = posture_positions
+            feature.milling_tasks = {k: MillingTaskSettings.from_json(v) for k, v in milling_task_json.items()}
             return feature
         if 'feature_list' in obj:
             return obj['feature_list']

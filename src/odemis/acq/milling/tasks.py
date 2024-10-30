@@ -220,9 +220,13 @@ def load_yaml(path: str):
 
     return yaml_file
 
-def load_milling_tasks(path: str, task_list: List[str] = [MILLING_ROUGH, MILLING_FINE, MILL_POLISHING]) -> Dict[str, MillingTaskSettings]:
+def load_milling_tasks(path: str, task_list: List[str] = None) -> Dict[str, MillingTaskSettings]:
     milling_tasks = {}
     task_file = load_yaml(path)
+
+    if task_list is None:
+        task_list = task_file.keys()
+
     for task_name in task_list:
         task = MillingTaskSettings.from_json(task_file[task_name])
         milling_tasks[task_name] = task
@@ -306,7 +310,7 @@ def _draw_microexpansion_pattern(image: model.DataArray, params: MicroexpansionP
     # convert parameters to pixels
     width = width / pixel_size
     height = height / pixel_size
-    spacing = spacing / pixel_size / 2
+    spacing = spacing / pixel_size 
 
     rect1 = mpatches.Rectangle((px-spacing, py-height/2), width=width, height=height, linewidth=1, edgecolor=colour, facecolor=colour, alpha=0.3, label=f"{name}")
     rect2 = mpatches.Rectangle((px+spacing-width/2, py-height/2), width=width, height=height, linewidth=1, edgecolor=colour, facecolor=colour, alpha=0.3)
@@ -321,8 +325,11 @@ drawing_functions = {
 }
 
 def draw_milling_tasks(image: model.DataArray, milling_tasks: Dict[str, MillingTaskSettings]) -> plt.Figure:
-    COLOURS = ["yellow", "cyan", "magenta"]
-
+    COLOURS = [
+        "yellow","cyan", "magenta", "lime",
+        "orange","hotpink", "green", "blue",
+        "red", "purple",
+    ]
     fig, ax = plt.subplots(1, 1, figsize=(10, 10))
     plt.imshow(image, cmap="gray")
 
