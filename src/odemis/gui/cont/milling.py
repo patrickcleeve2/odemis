@@ -31,6 +31,7 @@ import math
 import os
 from concurrent.futures import CancelledError
 from functools import partial
+from typing import Tuple, List, Dict, Optional
 
 import wx
 
@@ -230,7 +231,7 @@ class MillingButtonController:
 
         self._panel.btn_mill_active_features.Enable(not is_acquiring and has_sites)
 
-def _get_pattern_centre(pos: tuple, stream: acqstream.Stream):
+def _get_pattern_centre(pos: Tuple[float, float], stream: acqstream.Stream) -> Tuple[float, float]:
     """Convert the position to the centre of the image coordinate (pattern coordinate system)"""
     # get the center of the image, center of the pattern
     stream_pos = stream.raw[0].metadata[model.MD_POS]
@@ -238,6 +239,17 @@ def _get_pattern_centre(pos: tuple, stream: acqstream.Stream):
     # get the difference between the two
     center_x = pos[0] - stream_pos[0]
     center_y = pos[1] - stream_pos[1]
+
+    return center_x, center_y
+
+def _to_physical_position(pos: Tuple[float, float], stream: acqstream.Stream) -> Tuple[float, float]:
+    """Convert the position (pattern coordinates) to the physical coordinate position"""
+    # get the center of the image, center of the pattern
+    stream_pos = stream.raw[0].metadata[model.MD_POS]
+
+    # get the difference between the two
+    center_x = pos[0] + stream_pos[0]
+    center_y = pos[1] + stream_pos[1]
 
     return center_x, center_y
 
@@ -607,19 +619,16 @@ class MillingTaskController:
     @call_in_wx_main
     def draw_milling_tasks(self, pos: tuple = None):
         
-        if pos is None:
-            md_pos = self._tab_data.main.stage.position.value
-            pos = (md_pos["x"], md_pos["y"])
-
-        def pattern_to_shape_(canvas, 
+        def rectangle_pattern_to_shape(canvas,
+                              stream: acqstream.Stream, 
                               pattern: RectanglePatternParameters, 
                               colour: str = "#FFFF00", 
                               name: str = None) -> EditableShape:
+            """Convert a rectangle pattern to a shape"""
             rect = RectangleOverlay(cnvs=canvas, colour = colour)
-
             width = pattern.width.value
             height = pattern.height.value
-            x, y = pattern.center.value # TODO: this should be in image coordinates not physical yet
+            x, y = _to_physical_position(pattern.center.value, stream) # image coordinates -> physical coordinates
             if name is not None:
                 rect.name.value = name
 
@@ -628,25 +637,17 @@ class MillingTaskController:
             rect.p_point3 = Vec(x + width / 2, y - height / 2)
             rect.p_point4 = Vec(x - width / 2, y - height / 2)
 
-            return rect
-    
+            # rect.set_rotation(math.radians(45)) #  TODO: how to rotate the shape?
 
+            return rect
 
         self.rectangles_overlay.clear()
         self.rectangles_overlay.clear_labels()
 
-        # set the center pos to be -/+ 10um from the center
-        # import random
-        # pos = pos[0] + random.uniform(-10e-6, 10e-6), pos[1] + random.uniform(-10e-6, 10e-6)
-        # get a random index to not show
-        # idx = random.randint(0, len(milling_tasks)-1)
-
-
-
-        # TODO: the pattern center should be in image coordinates, not physical
-        # we need to convert from the physical pos to the image pos
-        # then we we draw the pattern, we need to convert back to physical
-
+        # convert the position to the centre of the image coordinate (pattern coordinate system)
+        ppos = None
+        if pos:
+            ppos = _get_pattern_centre(pos, self.stream)
         tasks_to_draw = list(self.milling_tasks.keys())
 
         # redraw all patterns
@@ -655,10 +656,14 @@ class MillingTaskController:
             if task_name not in tasks_to_draw:
                 continue
             for pattern in task.patterns:
-                pattern.center.value = (pos[0], pos[1])
+                # set the center of the pattern to the mouse position (if required)
+                if ppos:
+                    pattern.center.value = ppos # image centre
                 for j, pshape in enumerate(pattern.generate()):
                     name = task_name if j == 0 else None     
-                    shape = pattern_to_shape_(canvas=self.canvas, 
+                    shape = rectangle_pattern_to_shape(
+                                            canvas=self.canvas, 
+                                            stream=self.stream,
                                             pattern=pshape, 
                                             colour=colour,
                                             name=name)
@@ -671,6 +676,7 @@ class MillingTaskController:
         # can we re-colour / hide the control points?
         # can we toggle labels visiblility
         # can we toggle shape visibility
+        # how to rotate the shapes?
 
 
     @call_in_wx_main
@@ -688,19 +694,6 @@ class MillingTaskController:
         self._panel.gauge_milling_series.Show()
         self._panel.btn_milling_cancel.Show()
         self._tab_data.main.is_acquiring.value = True
-
-        # # construct milling task settings
-        # settings = millmng.MillingTaskSettings(
-        #     milling=self.settings_controller.settings,
-        #     patterns=[p.parameters for p in self.patterns.value],
-        # )
-
-        # logging.debug("---------- Preparing to start milling ----------")
-        # logging.debug(f"Mill Settings: {settings.milling}")
-        # logging.debug(f"{len(settings.patterns)} Patterns")
-        # for p in settings.patterns:
-        #     logging.debug(f"Pattern: {p}")
-        # logging.debug("-------------------------------------------------")
 
         # run the milling task
         import random
