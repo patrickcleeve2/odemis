@@ -470,12 +470,9 @@ class MillingTaskController:
         self.rectangles_overlay = ShapesOverlay(
             cnvs=self.canvas,
             shape_cls=RectangleOverlay,
-            # tool=guimod.TOOL_RECTANGLE,
-            # tool_va=tab_data.tool
         )
         
-        self.rectangles_overlay._shapes.subscribe(self._on_shapes_update)
-
+        # self.rectangles_overlay._shapes.subscribe(self._on_shapes_update) # TODO: trigger the update manually?
 
         self.canvas.add_world_overlay(self.rectangles_overlay)
         self.milling_tasks = load_milling_tasks(MILLING_TASKS_PATH)
@@ -580,22 +577,23 @@ class MillingTaskController:
         wx.CallAfter(self.canvas.request_drawing_update)
 
     @call_in_wx_main
+    @wxlimit_invocation(1) # max 1/s
     def _on_shapes_update(self, shapes):
         """Called when the shapes are updated"""
-        logging.warning("Shapes updated: %s", shapes)
+        logging.debug("Shapes updated: %s", shapes)
 
+        # check if any of the points of the shapes are outside the bounding box of the image
+        s_bbox = self.stream.getBoundingBox()
+        for shape in shapes:
+            valid = all([is_point_in_rect(pt, s_bbox) for pt in shape.points.value])
 
-        # TODO validate that the shapes are valid (inside image bounds)
-
-
-        # # practically only way to detect a shape has been removed
-        # if len(shapes) < len(self.patterns.value):
-        #     # a shape was removed, remove the corresponding pattern
-        #     for p in self.patterns.value:
-        #         # find which shape was removed
-        #         if p.shape not in shapes:
-        #             self.remove_pattern(p)
-        #             continue
+            if not valid:
+                logging.warning(f"Shape {shape} is not valid: {valid}")
+                self.valid_patterns.value = False
+                return # no point checking the rest, it's already invalid
+        
+        # all shapes are valid
+        self.valid_patterns.value = True
     
     def on_mouse_down(self, evt):
         active_canvas = evt.GetEventObject()
@@ -637,6 +635,11 @@ class MillingTaskController:
             rect.p_point3 = Vec(x + width / 2, y - height / 2)
             rect.p_point4 = Vec(x - width / 2, y - height / 2)
 
+            # required for initialisation?
+            rect._phys_to_view()
+            rect._points = rect.get_physical_sel()
+            rect.points.value = rect._points
+
             # rect.set_rotation(math.radians(45)) #  TODO: how to rotate the shape?
 
             return rect
@@ -668,7 +671,8 @@ class MillingTaskController:
                                             colour=colour,
                                             name=name)
                     self.rectangles_overlay.add_shape(shape)
-            
+
+        self._on_shapes_update(self.rectangles_overlay._shapes.value)
         return
 
         # notes:
@@ -700,7 +704,6 @@ class MillingTaskController:
         task_name = random.choice(list(self.milling_tasks.keys()))
         # TODO: we need to convert the pattern center from physical to image coordinates
         self._mill_future = millmng.mill_patterns(settings=self.milling_tasks[task_name])
-
 
         # link the milling gauge to the milling future
         self._gauge_future_conn = ProgressiveFutureConnector(
@@ -744,8 +747,8 @@ class MillingTaskController:
 
         # display the time on the GUI
         txt = "Estimated time: {}.".format(
-            units.readable_time(10 * len(self.patterns.value), full=False)
-        )
+            units.readable_time(10 * len(self.milling_tasks), full=False)
+        ) #TODO: accurate time estimate
         self._panel.txt_milling_est_time.SetLabel(txt)
 
     def _on_patterns(self, _):
@@ -775,16 +778,14 @@ class MillingTaskController:
         Enable/disable mill button depending on the state of the GUI
         """
         is_acquiring = self._tab_data.main.is_acquiring.value
-        has_patterns = bool(self.patterns.value)
+        # has_patterns = bool(self.patterns.value)
         valid_patterns = self.valid_patterns.value
-        # self._panel.btn_run_milling.Enable(
-        #     not is_acquiring and has_patterns and valid_patterns
-        # )
-        self._panel.btn_run_milling.Enable(True)
+        milling_enabled = not is_acquiring and valid_patterns
+        self._panel.btn_run_milling.Enable(milling_enabled)
 
-        if not has_patterns:
-            txt = "No patterns drawn..."
-            self._panel.txt_milling_est_time.SetLabel(txt)
+        # if not has_patterns:
+            # txt = "No patterns drawn..."
+            # self._panel.txt_milling_est_time.SetLabel(txt)
 
         if not valid_patterns:
             txt = "Patterns drawn outside image..."

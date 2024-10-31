@@ -113,8 +113,6 @@ class FibsemTab(Tab):
         # Add fit view to content to toolbar
         self.tb.add_tool(TOOL_ACT_ZOOM_FIT, self.view_controller.fitViewToContent)
 
-        if MILLING_ENABLED:
-            self.tb.add_tool(TOOL_RECTANGLE, tab_data.tool)
 
         # TODO: get components from main_data?
         # setup electron beam, det
