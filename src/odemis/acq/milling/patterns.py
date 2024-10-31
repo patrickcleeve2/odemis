@@ -109,9 +109,12 @@ class TrenchPatternParameters(MillingPatternParameters):
         height = self.height.value
         depth = self.depth.value
         spacing = self.spacing.value
+        center = self.center.value
 
         # pattern center
-        center_y = height / 2 + spacing / 2
+        center_x = center[0]
+        upper_center_y = center[1] + (height / 2 + spacing / 2)
+        lower_center_y = center[1] - (height / 2 + spacing / 2)
         
         patterns = [
             RectanglePatternParameters(
@@ -120,7 +123,7 @@ class TrenchPatternParameters(MillingPatternParameters):
                 height=height,
                 depth=depth,
                 rotation=0,
-                center = (0, center_y), # x, y
+                center = (center_x, upper_center_y), # x, y
                 scan_direction="TopToBottom",
             ),
             RectanglePatternParameters(
@@ -129,7 +132,7 @@ class TrenchPatternParameters(MillingPatternParameters):
                 height=height,
                 depth=depth,
                 rotation=0,
-                center = (0, -center_y), # x, y
+                center = (center_x, lower_center_y), # x, y
                 scan_direction="BottomToTop",
             ),
         ]
@@ -179,7 +182,8 @@ class MicroexpansionPatternParameters(MillingPatternParameters):
         width = self.width.value
         height = self.height.value
         depth = self.depth.value
-        spacing = self.spacing.value / 2       
+        spacing = self.spacing.value / 2    
+        center_x, center_y = self.center.value
 
         patterns = [
             RectanglePatternParameters(
@@ -188,7 +192,7 @@ class MicroexpansionPatternParameters(MillingPatternParameters):
                 height=height,
                 depth=depth,
                 rotation=0,
-                center = (-spacing, 0),
+                center = (center_x - spacing, center_y),
                 scan_direction="TopToBottom",
             ),
             RectanglePatternParameters(
@@ -197,7 +201,7 @@ class MicroexpansionPatternParameters(MillingPatternParameters):
                 height=height,
                 depth=depth,
                 rotation=0,
-                center = (spacing, 0),
+                center = (center_x + spacing, center_y),
                 scan_direction="TopToBottom",
             ),
         ]

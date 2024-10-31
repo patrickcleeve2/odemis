@@ -37,7 +37,7 @@ from odemis.gui.util import call_in_wx_main
 from odemis.util.dataio import data_to_static_streams
 
 # milling feature flag
-MILLING_ENABLED = False
+MILLING_ENABLED = True
 
 class FibsemTab(Tab):
 

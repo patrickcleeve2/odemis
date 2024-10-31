@@ -39,13 +39,13 @@ import odemis.gui.conf.file as conffile
 from odemis import model
 from odemis.acq import millmng
 from odemis.acq.milling.patterns import RectanglePatternParameters
-from odemis.acq.milling.tasks import MillingSettings2
+from odemis.acq.milling.tasks import MillingSettings2, load_milling_tasks, MillingTaskSettings
 from odemis.acq.feature import FEATURE_ROUGH_MILLED, FEATURE_ACTIVE
 from odemis.gui import model as guimod
 from odemis.gui.comp.overlay.base import Vec
 from odemis.gui.comp.milling import MillingPatternPanel, MillingSettingsPanel
 from odemis.gui.comp.overlay.rectangle import RectangleOverlay
-from odemis.gui.comp.overlay.shapes import MillingShapesOverlay, EditableShape
+from odemis.gui.comp.overlay.shapes import EditableShape, ShapesOverlay
 from odemis.gui.util import call_in_wx_main, wxlimit_invocation
 from odemis.gui.util.widgets import (
     ProgressiveFutureConnector,
@@ -55,7 +55,9 @@ from odemis.util import units, conversion, is_point_in_rect
 from odemis.util.filename import make_unique_name
 
 MILLING_SETTINGS_PATH = os.path.join(conffile.CONF_PATH, "mimas.mill.yaml")
-
+# yellow, cyan, magenta, lime, orange, hotpink
+MILLING_COLOURS = ["#FFFF00", "#00FFFF", "#FF00FF", "#00FF00", "#FFA500", "#FF69B4"]
+MILLING_TASKS_PATH = "/home/patrick/development/odemis/scripts/automated-milling-projects/milling_tasks-new.yaml"
 
 class MillingButtonController:
     """
@@ -453,16 +455,19 @@ class MillingTaskController:
         self.settings_controller = MillingSettingsController(self)
 
         # pattern overlay
-        self.rectangles_overlay = MillingShapesOverlay(
+        self.rectangles_overlay = ShapesOverlay(
             cnvs=self.canvas,
             shape_cls=RectangleOverlay,
-            tool=guimod.TOOL_RECTANGLE,
-            tool_va=tab_data.tool
+            # tool=guimod.TOOL_RECTANGLE,
+            # tool_va=tab_data.tool
         )
+        
+        self.rectangles_overlay._shapes.subscribe(self._on_shapes_update)
+
+
         self.canvas.add_world_overlay(self.rectangles_overlay)
-        self.rectangles_overlay.new_shape.subscribe(self.add_pattern)
-        self.rectangles_overlay.shapes.subscribe(self._on_shapes_update) 
-        # TODO: integrate with undo/redo functionality
+        self.milling_tasks = load_milling_tasks(MILLING_TASKS_PATH)
+        self.canvas.Bind(wx.EVT_LEFT_DOWN, self.on_mouse_down) # bind the mouse down event
 
         self._pattern_sub_callback = {}
 
@@ -565,22 +570,115 @@ class MillingTaskController:
     @call_in_wx_main
     def _on_shapes_update(self, shapes):
         """Called when the shapes are updated"""
-        logging.debug("Shapes updated: %s", shapes)
+        logging.warning("Shapes updated: %s", shapes)
 
-        # practically only way to detect a shape has been removed
-        if len(shapes) < len(self.patterns.value):
-            # a shape was removed, remove the corresponding pattern
-            for p in self.patterns.value:
-                # find which shape was removed
-                if p.shape not in shapes:
-                    self.remove_pattern(p)
-                    continue
+
+        # TODO validate that the shapes are valid (inside image bounds)
+
+
+        # # practically only way to detect a shape has been removed
+        # if len(shapes) < len(self.patterns.value):
+        #     # a shape was removed, remove the corresponding pattern
+        #     for p in self.patterns.value:
+        #         # find which shape was removed
+        #         if p.shape not in shapes:
+        #             self.remove_pattern(p)
+        #             continue
+    
+    def on_mouse_down(self, evt):
+        active_canvas = evt.GetEventObject()
+        logging.debug(f"mouse down event, canvas: {active_canvas}")
+
+        # check if shift is pressed, and if a stream is selected
+        if evt.ShiftDown() and evt.ControlDown():
+
+            # get the position of the mouse, convert to physical position
+            pos = evt.GetPosition()
+            p_pos = active_canvas.view_to_phys(pos, active_canvas.get_half_buffer_size())
+            logging.debug(f"shift + control pressed, mouse_pos: {pos}, phys_pos: {p_pos}")
+
+            # move selected stream to position
+            self.draw_milling_tasks(p_pos)
+            return
+        
+        # super event passthrough
+        active_canvas.on_left_down(evt)       
+
+    @call_in_wx_main
+    def draw_milling_tasks(self, pos: tuple = None):
+        
+        if pos is None:
+            md_pos = self._tab_data.main.stage.position.value
+            pos = (md_pos["x"], md_pos["y"])
+
+        def pattern_to_shape_(canvas, 
+                              pattern: RectanglePatternParameters, 
+                              colour: str = "#FFFF00", 
+                              name: str = None) -> EditableShape:
+            rect = RectangleOverlay(cnvs=canvas, colour = colour)
+
+            width = pattern.width.value
+            height = pattern.height.value
+            x, y = pattern.center.value # TODO: this should be in image coordinates not physical yet
+            if name is not None:
+                rect.name.value = name
+
+            rect.p_point1 = Vec(x - width / 2, y + height / 2)
+            rect.p_point2 = Vec(x + width / 2, y + height / 2)
+            rect.p_point3 = Vec(x + width / 2, y - height / 2)
+            rect.p_point4 = Vec(x - width / 2, y - height / 2)
+
+            return rect
+    
+
+
+        self.rectangles_overlay.clear()
+        self.rectangles_overlay.clear_labels()
+
+        # set the center pos to be -/+ 10um from the center
+        # import random
+        # pos = pos[0] + random.uniform(-10e-6, 10e-6), pos[1] + random.uniform(-10e-6, 10e-6)
+        # get a random index to not show
+        # idx = random.randint(0, len(milling_tasks)-1)
+
+
+
+        # TODO: the pattern center should be in image coordinates, not physical
+        # we need to convert from the physical pos to the image pos
+        # then we we draw the pattern, we need to convert back to physical
+
+        tasks_to_draw = list(self.milling_tasks.keys())
+
+        # redraw all patterns
+        for i, (task_name, task) in enumerate(self.milling_tasks.items()):
+            colour = MILLING_COLOURS[i % len(MILLING_COLOURS)]
+            if task_name not in tasks_to_draw:
+                continue
+            for pattern in task.patterns:
+                pattern.center.value = (pos[0], pos[1])
+                for j, pshape in enumerate(pattern.generate()):
+                    name = task_name if j == 0 else None     
+                    shape = pattern_to_shape_(canvas=self.canvas, 
+                                            pattern=pshape, 
+                                            colour=colour,
+                                            name=name)
+                    self.rectangles_overlay.add_shape(shape)
+            
+        return
+
+        # notes:
+        # can we fill the rectangles?
+        # can we re-colour / hide the control points?
+        # can we toggle labels visiblility
+        # can we toggle shape visibility
+
 
     @call_in_wx_main
     def _run_milling(self, evt: wx.Event):
         """
         called when the button "MILL" is pressed
         """
+
         # Make sure all the streams are paused
         self._tab.streambar_controller.pauseStreams()
 
@@ -591,21 +689,25 @@ class MillingTaskController:
         self._panel.btn_milling_cancel.Show()
         self._tab_data.main.is_acquiring.value = True
 
-        # construct milling task settings
-        settings = millmng.MillingTaskSettings(
-            milling=self.settings_controller.settings,
-            patterns=[p.parameters for p in self.patterns.value],
-        )
+        # # construct milling task settings
+        # settings = millmng.MillingTaskSettings(
+        #     milling=self.settings_controller.settings,
+        #     patterns=[p.parameters for p in self.patterns.value],
+        # )
 
-        logging.debug("---------- Preparing to start milling ----------")
-        logging.debug(f"Mill Settings: {settings.milling}")
-        logging.debug(f"{len(settings.patterns)} Patterns")
-        for p in settings.patterns:
-            logging.debug(f"Pattern: {p}")
-        logging.debug("-------------------------------------------------")
+        # logging.debug("---------- Preparing to start milling ----------")
+        # logging.debug(f"Mill Settings: {settings.milling}")
+        # logging.debug(f"{len(settings.patterns)} Patterns")
+        # for p in settings.patterns:
+        #     logging.debug(f"Pattern: {p}")
+        # logging.debug("-------------------------------------------------")
 
         # run the milling task
-        self._mill_future = millmng.mill_patterns(settings=settings)
+        import random
+        task_name = random.choice(list(self.milling_tasks.keys()))
+        # TODO: we need to convert the pattern center from physical to image coordinates
+        self._mill_future = millmng.mill_patterns(settings=self.milling_tasks[task_name])
+
 
         # link the milling gauge to the milling future
         self._gauge_future_conn = ProgressiveFutureConnector(
@@ -682,9 +784,10 @@ class MillingTaskController:
         is_acquiring = self._tab_data.main.is_acquiring.value
         has_patterns = bool(self.patterns.value)
         valid_patterns = self.valid_patterns.value
-        self._panel.btn_run_milling.Enable(
-            not is_acquiring and has_patterns and valid_patterns
-        )
+        # self._panel.btn_run_milling.Enable(
+        #     not is_acquiring and has_patterns and valid_patterns
+        # )
+        self._panel.btn_run_milling.Enable(True)
 
         if not has_patterns:
             txt = "No patterns drawn..."
