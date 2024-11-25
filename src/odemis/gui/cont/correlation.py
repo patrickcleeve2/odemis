@@ -202,6 +202,8 @@ class CorrelationController(object):
             s.raw[0].metadata[model.MD_ROTATION_COR] = 0
             s.raw[0].metadata[model.MD_PIXEL_SIZE_COR] = (1, 1)
 
+            self.update_localization_tab_streams_metadata(s)
+
     def add_streams(self, streams: list) -> None:
         """add streams to the correlation tab
         :param streams: (list[StaticStream]) the streams to add"""
@@ -232,6 +234,13 @@ class CorrelationController(object):
             # add stream to streambar
             sc = self._tab.streambar_controller.addStream(s, add_to_view=True, play=False)
             sc.stream_panel.show_remove_btn(True)
+
+    def _stop_streams_subscriber(self):
+        self._tab_data_model.streams.unsubscribe(self.update_localization_tab_streams)
+
+    @call_in_wx_main
+    def _start_streams_subscriber(self):
+        self._tab_data_model.streams.subscribe(self.update_localization_tab_streams, init=False)
 
     def update_localization_tab_streams(self, streams: list) -> None:
         """add streams to the localization tab
@@ -409,7 +418,10 @@ class CorrelationController(object):
 
     def update_localization_tab_streams_metadata(self, s: StaticStream) -> None:
         """update the metadata of the stream in the localization tab"""
-        # TODO: change this to callback?
+
+        if self.localization_tab is None:
+            self.localization_tab: LocalizationTab = self._main_data_model.getTabByName("cryosecom-localization")
+
         # also update the localization tab
         if s in self.localization_tab.tab_data_model.streams.value:
 
