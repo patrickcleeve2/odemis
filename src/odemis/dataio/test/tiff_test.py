@@ -2156,6 +2156,7 @@ class TestTiffIO(unittest.TestCase):
                 model.MD_EXP_TIME: 1.2,  # s
                 model.MD_IN_WL: (500e-9, 522e-9),  # m
                 model.MD_OUT_WL: (400e-9, 450e-9),  # m
+                model.MD_LIGHT_POWER: 0.140,  # W
             },
             {model.MD_SW_VERSION: "1.0-test",
                 model.MD_HW_NAME: "fake hw",
@@ -2165,9 +2166,10 @@ class TestTiffIO(unittest.TestCase):
                 model.MD_BINNING: (1, 1),  # px, px
                 model.MD_PIXEL_SIZE: (1e-6, 1e-6),  # m/px
                 model.MD_POS: (13.7e-3, -30e-3),  # m
-                model.MD_EXP_TIME: 1,  # s
+                model.MD_EXP_TIME: 2,  # s
                 model.MD_IN_WL: (590e-9, 620e-9),  # m
                 model.MD_OUT_WL: (520e-9, 550e-9),  # m
+                model.MD_LIGHT_POWER: 0.240,  # W
             },
             {model.MD_SW_VERSION: "1.0-test",
                 model.MD_HW_NAME: "fake hw",
@@ -2177,9 +2179,10 @@ class TestTiffIO(unittest.TestCase):
                 model.MD_BINNING: (1, 1),  # px, px
                 model.MD_PIXEL_SIZE: (1e-6, 1e-6),  # m/px
                 model.MD_POS: (13.7e-3, -30e-3),  # m
-                model.MD_EXP_TIME: 1,  # s
+                model.MD_EXP_TIME: 1.5,  # s
                 model.MD_IN_WL: (600e-9, 630e-9),  # m
                 model.MD_OUT_WL: (620e-9, 650e-9),  # m
+                model.MD_LIGHT_POWER: 0.350,  # W
             },
             ]
         # create 3 greyscale images with Z stacks of same size
@@ -2219,7 +2222,7 @@ class TestTiffIO(unittest.TestCase):
                 for k in range(nb_t):
                     combinations_zc.append((i, j, k))
 
-        tiff_data_elements = root.findall('.//{http://www.openmicroscopy.org/Schemas/OME/2012-06}TiffData')
+        tiff_data_elements = root.findall('.//{http://www.openmicroscopy.org/Schemas/OME/2016-06}TiffData')
         for ind, element in enumerate(tiff_data_elements):
             tiffdata = element.attrib
             if int(tiffdata["IFD"]) < ifd_max:
@@ -2242,6 +2245,22 @@ class TestTiffIO(unittest.TestCase):
             # Pad the shape with 1s to always get 5 dimensions
             res = (1,) * (5 - len(shape)) + shape
             self.assertEqual(im.shape, res)
+
+        # validate the metadata after re-opening the file
+        exclude_keys = [model.MD_SW_VERSION, model.MD_ACQ_DATE] # md that is not saved in the file
+        # note: acq_date causes timezone issues when comparing, so skipped in this test
+        for i, md in enumerate(metadata):
+            for key, value in md.items():
+                if key in exclude_keys:
+                    continue
+                self.assertIn(key, rdata[i].metadata)
+
+                if isinstance(value, (tuple, list)):
+                    numpy.testing.assert_array_almost_equal(value, rdata[i].metadata[key])
+                elif isinstance(value, float):
+                    self.assertAlmostEqual(value, rdata[i].metadata[key], delta=1e-5)
+                else:
+                    self.assertEqual(value, rdata[i].metadata[key])
 
     def testAcquisitionDataTIFFLargerFile(self):
 
