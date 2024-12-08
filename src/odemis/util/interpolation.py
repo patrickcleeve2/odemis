@@ -46,7 +46,7 @@ def interpolate_z_stack(da: model.DataArray,
     interpolated = z_interpolation(da, pixelsize_in, pixelsize_out, method=method)
 
     # add back channel dimension # Note: axis = (0, 1) not supported on 20.04
-    interpolated = numpy.expand_dims(numpy.expand_dims(interpolated, axis=0), axis=0) 
+    interpolated = numpy.expand_dims(numpy.expand_dims(interpolated, axis=0), axis=0)
 
     # update metadata
     md = copy.deepcopy(da.metadata)
