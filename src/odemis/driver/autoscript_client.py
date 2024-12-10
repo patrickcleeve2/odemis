@@ -212,6 +212,14 @@ class SEM(model.HwComponent):
             self.server._pyroClaimOwnership()
             return self.server.get_hardware_version()
 
+    def list_available_channels(self) -> List[str]:
+        """List all available channels
+        :return: (list) of available channels.
+        """
+        with self._proxy_access:
+            self.server._pyroClaimOwnership()
+            return self.server.list_available_channels()
+
     def move_stage_absolute(self, position: Dict[str, float]) -> None:
         """ Move the stage the given position. This is blocking.
         :param position: absolute position to move the stage to per axes.
@@ -271,7 +279,6 @@ class SEM(model.HwComponent):
         with self._proxy_access:
             self.server._pyroClaimOwnership()
             return self.server.get_stage_coordinate_system()
-
     def home_stage(self):
         """Home stage asynchronously. This is non-blocking."""
         with self._proxy_access:
