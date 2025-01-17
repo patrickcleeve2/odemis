@@ -34,11 +34,7 @@ import pkg_resources
 import Pyro5.api
 from Pyro5.errors import CommunicationError
 from scipy import ndimage
-from odemis import model
-from odemis import util
-from odemis.model import (CancellableFuture, CancellableThreadPoolExecutor,
-                          DataArray, HwError, ProgressiveFuture,
-                          StringEnumerated, isasync)
+from odemis import model, util
 from odemis.driver.xt_client import check_and_transfer_latest_package
 from odemis.model import (
     CancellableFuture,
@@ -1266,9 +1262,9 @@ class Scanner(model.Emitter):
                 self.accelVoltage._value = voltage
                 self.accelVoltage.notify(voltage)
             beam_current = self.parent.get_beam_current(self.channel)
-            if beam_current != self.beamCurrent.value:
-                self.beamCurrent._value = beam_current
-                self.beamCurrent.notify(beam_current)
+            if beam_current != self.probeCurrent.value:
+                self.probeCurrent._value = beam_current
+                self.probeCurrent.notify(beam_current)
             beam_shift = self.parent.get_beam_shift(self.channel)
             if beam_shift != self.shift.value:
                 self.shift._value = beam_shift

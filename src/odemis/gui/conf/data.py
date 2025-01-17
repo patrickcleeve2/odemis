@@ -779,7 +779,7 @@ HW_SETTINGS_CONFIG_PER_ROLE = {
                 "tooltip": "Accelerating voltage",
                 "event": wx.EVT_SCROLL_CHANGED  # only affects when it's a slider
             }),
-            ("beamCurrent", {
+            ("probeCurrent", {
                 "label": "Beam Current",
                 "control_type": odemis.gui.CONTROL_SLIDER,
                 "type": "float",
@@ -824,7 +824,7 @@ HW_SETTINGS_CONFIG_PER_ROLE = {
                 "tooltip": "Accelerating voltage",
                 "event": wx.EVT_SCROLL_CHANGED  # only affects when it's a slider
             }),
-            ("beamCurrent", {
+            ("probeCurrent", {
                 "label": "Beam Current",
                 "control_type": odemis.gui.CONTROL_SLIDER,
                 "type": "float",
