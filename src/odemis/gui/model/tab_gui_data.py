@@ -20,10 +20,12 @@ This file is part of Odemis.
     Odemis. If not, see http://www.gnu.org/licenses/.
 
 """
+import copy
 import logging
 import math
 from abc import ABCMeta
-from typing import Tuple
+from enum import Enum
+from typing import Dict, Tuple
 
 import odemis.acq.stream as acqstream
 from odemis import model
@@ -66,6 +68,10 @@ from odemis.model import (
 )
 from odemis.util.filename import create_filename, make_unique_name
 
+
+class AcquiMode(Enum): # TODO: move to better place
+    FLM = 1
+    FIBSEM = 2
 
 class MicroscopyGUIData(metaclass=ABCMeta):
     """Contains all the data corresponding to a GUI tab.
