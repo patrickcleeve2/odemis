@@ -1807,7 +1807,7 @@ class Stage(model.Actuator):
                 "found in rotation axes")
         logging.debug(f"The offset values in x and y are {self._raw_offset} when stage is in the raw coordinate "
                         f"system for raw stage coordinates: {pos}, linked stage coordinates: {pos_linked}")
-        
+
     def _updatePosition(self):
         """
         update the position VA
