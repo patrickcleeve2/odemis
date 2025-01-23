@@ -1467,7 +1467,7 @@ class MeteorTFS3PostureManager(MeteorTFS1PostureManager):
         :return: (dict str->float) the transformed position.
         """
         return NotImplemented
-    
+
     def _transform_from_fm_to_fib(self, pos: Dict[str, float]) -> Dict[str, float]:
         """
         Transforms the current stage position from the meteor/FM imaging area to the FIB imaging area.
