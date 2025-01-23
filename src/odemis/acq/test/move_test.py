@@ -689,7 +689,6 @@ class TestMeteorTFS3Move(unittest.TestCase):
     """
     MIC_CONFIG = METEOR_TFS3_CONFIG
     ROTATION_AXES = {'rx', 'rz'}
-
     @classmethod
     def setUpClass(cls):
         testing.start_backend(cls.MIC_CONFIG)
@@ -836,7 +835,6 @@ class TestMeteorTFS3Move(unittest.TestCase):
             abs_pos = init_ss_pos.copy()
             abs_pos["x"] += dx
             abs_pos["y"] += dy
-
             f = self.stage.moveAbs(abs_pos)
             f.result()
             time.sleep(2)
