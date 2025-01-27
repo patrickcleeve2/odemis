@@ -315,6 +315,10 @@ class MainGUIData(object):
                     required_roles += ["ion-beam", "se-detector-ion"]
             elif self.role == "meteor":
                 required_roles += ["light", "stage", "focus", "stage-bare"]
+                # add additional roles when fibsem control enabled
+                if has_fibsem:
+                    required_roles += ["e-beam", "se-detector", "ebeam-focus",
+                                       "ion-beam", "se-detector-ion", "ion-focus"]
             elif self.role == "mimas":
                 required_roles += ["light", "stage", "focus", "align", "ion-beam"]
             elif self.role in ("sparc", "sparc2"):
