@@ -58,9 +58,9 @@ COLOURS = [
     "red", "purple",
 ]
 
-def _draw_trench_pattern(image: model.DataArray, 
-                         params: TrenchPatternParameters, 
-                         colour: str = "yellow", 
+def _draw_trench_pattern(image: model.DataArray,
+                         params: TrenchPatternParameters,
+                         colour: str = "yellow",
                          name: str = "Task") -> List[mpatches.Rectangle]:
     """Draw a trench pattern on the given image using matplotlib.
     :param image: the image to draw the pattern on
@@ -110,10 +110,9 @@ def _draw_trench_pattern(image: model.DataArray,
 
     return [rect1, rect2]
 
-
-def _draw_rectangle_pattern(image: model.DataArray, 
-                            params: RectanglePatternParameters, 
-                            colour: str = "yellow", 
+def _draw_rectangle_pattern(image: model.DataArray,
+                            params: RectanglePatternParameters,
+                            colour: str = "yellow",
                             name: str = "Task") -> List[mpatches.Rectangle]:
     """Draw a rectangle pattern on the given image using matplotlib.
     :param image: the image to draw the pattern on
@@ -152,9 +151,9 @@ def _draw_rectangle_pattern(image: model.DataArray,
 
     return [rect]
 
-def _draw_microexpansion_pattern(image: model.DataArray, 
-                                 params: MicroexpansionPatternParameters, 
-                                 colour: str = "yellow", 
+def _draw_microexpansion_pattern(image: model.DataArray,
+                                 params: MicroexpansionPatternParameters,
+                                 colour: str = "yellow",
                                  name: str = "Task") -> List[mpatches.Rectangle]:
     """Draw a microexpansion pattern on the given image using matplotlib.
     :param image: the image to draw the pattern on
