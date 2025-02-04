@@ -177,7 +177,7 @@ class TFSMillingTaskManager:
         self._future._task_state = RUNNING
 
         try:
-            for task in self.tasks:
+            for i, task in enumerate(self.tasks, 1):
 
                 with self._future._task_lock:
                     if self._future._task_state == CANCELLED:
