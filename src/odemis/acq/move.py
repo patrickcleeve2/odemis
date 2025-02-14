@@ -1593,6 +1593,93 @@ class MeteorTFS3PostureManager(MeteorTFS1PostureManager):
         logging.debug(f"transforming from chamber to stage-bare, vshift: {vshift}, theta: {theta}, initial shift: {shift}")
         return vshift
 
+class MeteorTFS3PostureManager(MeteorTFS1PostureManager):
+    def __init__(self, microscope):
+        MeteorPostureManager.__init__(self, microscope)
+        # Check required metadata used during switching
+        self.required_keys.add(model.MD_FAV_MILL_POS_ACTIVE)
+        self.required_keys.add(model.MD_CALIB)
+        self.check_stage_metadata(required_keys=self.required_keys)
+        self.check_calib_data(required_keys={model.MD_SAMPLE_PRE_TILT, "dx", "dy"}) # TODO: add "SEM-Eucentric-Focus"
+        if not {"x", "y", "rz", "rx"}.issubset(self.stage.axes):
+            raise KeyError("The stage misses 'x', 'y', 'rx' or 'rz' axes")
+
+        self._initialise_transformation(axes=["y", "z"], rotation=self.pre_tilt)
+        self.create_sample_stage()
+        self.postures = [SEM_IMAGING, FM_IMAGING, MILLING]
+
+    def create_sample_stage(self):
+        self.sample_stage = SampleStage(name="Sample Stage",
+                                        role="stage",
+                                        stage_bare = self.stage,
+                                        posture_manager=self)
+
+    def _transformFromSEMToMeteor(self, pos: Dict[str, float]) -> Dict[str, float]:
+        """
+        Transforms the current stage position from the SEM imaging area to the
+        meteor/FM imaging area.
+        :param pos: (dict str->float) the initial stage position.
+        :return: (dict str->float) the transformed position.
+        """
+        # NOTE: this transform now always rotates around the z axis (180deg)
+        # for pure translation, use FIB -> FM transform
+        stage_md = self.stage.getMetadata()
+        transformed_pos = pos.copy()
+        md_calib = stage_md[model.MD_CALIB]
+        fm_pos_active = stage_md[model.MD_FAV_FM_POS_ACTIVE]
+
+        # check if the stage positions have rz axes
+        if not ("rz" in pos and "rz" in fm_pos_active):
+            raise ValueError(f"The stage position does not have rz axis pos={pos}, fm_pos_active={fm_pos_active}")
+
+        transformed_pos["x"] = md_calib["dx"] - pos["x"]
+        transformed_pos["y"] = md_calib["dy"] - pos["y"]
+        transformed_pos.update(fm_pos_active)
+
+        return transformed_pos
+
+    def _transformFromMeteorToSEM(self, pos: Dict[str, float]) -> Dict[str, float]:
+        """
+        Transforms the current stage position from the meteor/FM imaging area
+        to the SEM imaging area.
+        :param pos: (dict str->float) the initial stage position.
+        :return: (dict str->float) the transformed stage position.
+        """
+        # NOTE: this transform now always rotates around the z axis (180deg)
+        # for pure translation, use FM -> FIB transform
+        stage_md = self.stage.getMetadata()
+        transformed_pos = pos.copy()
+        md_calib = stage_md[model.MD_CALIB]
+        sem_pos_active = stage_md[model.MD_FAV_SEM_POS_ACTIVE]
+
+        # check if the stage positions have rz axes
+        if not ("rz" in pos and "rz" in sem_pos_active):
+            raise ValueError(f"The stage position does not have rz axis. pos={pos}, sem_pos_active={sem_pos_active}")
+
+        transformed_pos["x"] = md_calib["dx"] - pos["x"]
+        transformed_pos["y"] = md_calib["dy"] - pos["y"]
+        transformed_pos.update(sem_pos_active)
+
+        return transformed_pos
+
+    def _transform_from_fib_to_fm(self, pos: Dict[str, float]) -> Dict[str, float]:
+        """
+        Transforms the current stage position from the FIB imaging area to the
+        meteor/FM imaging area.
+        :param pos: (dict str->float) the initial stage position.
+        :return: (dict str->float) the transformed position.
+        """
+        return NotImplemented
+
+    def _transform_from_fm_to_fib(self, pos: Dict[str, float]) -> Dict[str, float]:
+        """
+        Transforms the current stage position from the meteor/FM imaging area to the FIB imaging area.
+        :param pos: (dict str->float) the initial stage position.
+        :return: (dict str->float) the transformed stage position.
+        """
+        return NotImplemented
+
+
 class MeteorZeiss1PostureManager(MeteorPostureManager):
     def __init__(self, microscope):
         super().__init__(microscope)
