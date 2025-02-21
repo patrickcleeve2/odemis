@@ -144,8 +144,16 @@ class CryoFeature(object):
         logging.info(f"Stage position for milling: {self.get_posture_position(MILLING)}")
         logging.info(f"Feature {self.name.value} is ready to mill.")
 
-def get_feature_position_at_posture(pm: MicroscopePostureManager, feature: CryoFeature, posture: int, recalculate: bool = False) -> Dict[str, float]:
-    """Get the feature position at the given posture, if it doesn't exist, create it."""
+def get_feature_position_at_posture(pm: MicroscopePostureManager,
+                                    feature: CryoFeature,
+                                    posture: int,
+                                    recalculate: bool = False) -> Dict[str, float]:
+    """Get the feature position at the given posture, if it doesn't exist, create it.
+    :param pm: the posture manager
+    :param feature: the feature to get the position for
+    :param posture: the posture to get the position for
+    :param recalculate: if True, force recalculate the position, otherwise use the existing one
+    :return: the position for the given posture"""
     position = feature.get_posture_position(posture)
 
     # if the position doesn't exist at that posture, create it
@@ -172,7 +180,7 @@ def get_features_dict(features: List[CryoFeature]) -> Dict[str, str]:
                         'stage_position': feature.stage_position.value,
                         'fm_focus_position': feature.fm_focus_position.value,
                         'posture_positions': feature.posture_positions,
-                        "milling_tasks": {k: v.to_json() for k, v in feature.milling_tasks.items()},
+                        "milling_tasks": {k: v.to_dict() for k, v in feature.milling_tasks.items()},
                         }
         if feature.path:
             feature_item['path'] = feature.path
@@ -201,12 +209,12 @@ class FeaturesDecoder(json.JSONDecoder):
                                   )
             feature.status.value = obj['status']
             feature.posture_positions = {int(k): v for k, v in posture_positions.items()} # convert keys to int
-            feature.milling_tasks = {k: MillingTaskSettings.from_json(v) for k, v in milling_task_json.items()}
+            feature.milling_tasks = {k: MillingTaskSettings.from_dict(v) for k, v in milling_task_json.items()}
             feature.path = obj.get('path', None)
 
             # load the reference image
             if feature.path:
-                filename = os.path.join(feature.path, f"{self.name.value}-{REFERENCE_IMAGE_FILENAME}")
+                filename = os.path.join(feature.path, f"{feature.name.value}-{REFERENCE_IMAGE_FILENAME}")
                 if os.path.exists(filename):
                     feature.reference_image = open_acquisition(filename)[0]
                 else:
@@ -528,7 +536,12 @@ class CryoFeatureAcquisitionTask(object):
 
         autofocus_time = 0
         if self.use_autofocus:
-            autofocus_time = estimateAutoFocusTime(self.streams[0].detector, None, steps=20)
+            rel_rng = SAFE_REL_RANGE_DEFAULT
+            focus_rng = (self.focus.position.value["z"] + rel_rng[0], self.focus.position.value["z"] + rel_rng[1])
+            autofocus_time = estimateAutoFocusTime(detector=self.streams[0].detector,
+                                                        emt=None,
+                                                        focus=self.focus,
+                                                        rng_focus=focus_rng)
 
         if self.zparams:
             zlevels = self._generate_zlevels(zmin=self.zparams["zmin"],

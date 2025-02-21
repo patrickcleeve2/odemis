@@ -1,10 +1,33 @@
+"""
+@author: Patrick Cleeve
 
+Copyright © 2025 Delmic
+
+This file is part of Odemis.
+
+Odemis is free software: you can redistribute it and/or modify it under the
+terms of the GNU General Public License version 2 as published by the Free
+Software Foundation.
+
+Odemis is distributed in the hope that it will be useful, but WITHOUT ANY
+WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
+PARTICULAR PURPOSE. See the GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License along with
+Odemis. If not, see http://www.gnu.org/licenses/.
+
+
+### Purpose ###
+
+This module contains structures to define milling patterns.
+
+"""
 
 import math
 from abc import ABC, abstractmethod
+from typing import List
 
 from odemis import model
-
 
 class MillingPatternParameters(ABC):
     """Represents milling pattern parameters"""
@@ -13,19 +36,19 @@ class MillingPatternParameters(ABC):
         self.name = model.StringVA(name)
 
     @abstractmethod
-    def to_json(self) -> dict:
+    def to_dict(self) -> dict:
         pass
 
     @staticmethod
     @abstractmethod
-    def from_json(data: dict):
+    def from_dict(data: dict):
         pass
 
     def __repr__(self):
-        return f"{self.to_json()}"
+        return f"{self.to_dict()}"
 
     @abstractmethod
-    def generate(self):
+    def generate(self) -> List['MillingPatternParameters']:
         """generate the milling pattern for the microscope"""
         pass
 
@@ -42,7 +65,8 @@ class RectanglePatternParameters(MillingPatternParameters):
         self.center = model.TupleContinuous(center, unit="m", range=((-1e3, -1e3), (1e3, 1e3)), cls=(int, float))
         self.scan_direction = model.StringEnumerated(scan_direction, choices=set(["TopToBottom", "BottomToTop", "LeftToRight", "RightToLeft"]))
 
-    def to_json(self) -> dict:
+    def to_dict(self) -> dict:
+        """Convert the parameters to a json object"""
         return {"name": self.name.value,
                 "width": self.width.value,
                 "height": self.height.value,
@@ -55,7 +79,8 @@ class RectanglePatternParameters(MillingPatternParameters):
                 }
 
     @staticmethod
-    def from_json(data: dict):
+    def from_dict(data: dict) -> 'RectanglePatternParameters':
+        """Create a RectanglePatternParameters object from a json object"""
         return RectanglePatternParameters(width=data["width"],
                                         height=data["height"],
                                         depth=data["depth"],
@@ -64,10 +89,12 @@ class RectanglePatternParameters(MillingPatternParameters):
                                         scan_direction=data.get("scan_direction", "TopToBottom"),
                                         name=data.get("name", "Rectangle"))
 
-    def __repr__(self):
-        return f"{self.to_json()}"
+    def __repr__(self) -> str:
+        return f"{self.to_dict()}"
 
-    def generate(self):
+    def generate(self) -> List[MillingPatternParameters]:
+        """Generate a list of milling shapes for the microscope.
+        Note: the rectangle is a pattern that is always generated as a single shape"""
         return [self]
 
 class TrenchPatternParameters(MillingPatternParameters):
@@ -81,7 +108,8 @@ class TrenchPatternParameters(MillingPatternParameters):
         self.spacing = model.FloatContinuous(spacing, unit="m", range=(1e-9, 900e-6))
         self.center = model.TupleContinuous(center, unit="m", range=((-1e3, -1e3), (1e3, 1e3)), cls=(int, float))
 
-    def to_json(self) -> dict:
+    def to_dict(self) -> dict:
+        """Convert the parameters to a json object"""
         return {"name": self.name.value,
                 "width": self.width.value,
                 "height": self.height.value,
@@ -93,7 +121,8 @@ class TrenchPatternParameters(MillingPatternParameters):
         }
 
     @staticmethod
-    def from_json(data: dict):
+    def from_dict(data: dict) -> 'TrenchPatternParameters':
+        """Create a TrenchPatternParameters object from a json object"""
         return TrenchPatternParameters(width=data["width"],
                                         height=data["height"],
                                         depth=data["depth"],
@@ -101,11 +130,11 @@ class TrenchPatternParameters(MillingPatternParameters):
                                         center=(data.get("center_x", 0), data.get("center_y", 0)),
                                         name=data.get("name", "Trench"))
 
-    def __repr__(self):
-        return f"{self.to_json()}"
+    def __repr__(self) -> str:
+        return f"{self.to_dict()}"
 
-    def generate(self):
-        """Generate a list of milling patterns for the microscope"""
+    def generate(self) -> List[MillingPatternParameters]:
+        """Generate a list of milling shapes for the microscope"""
         name = self.name.value
         width = self.width.value
         height = self.height.value
@@ -153,7 +182,8 @@ class MicroexpansionPatternParameters(MillingPatternParameters):
         self.spacing = model.FloatContinuous(spacing, unit="m", range=(1e-9, 900e-6))
         self.center = model.TupleContinuous(center, unit="m", range=((-1e3, -1e3), (1e3, 1e3)), cls=(int, float))
 
-    def to_json(self) -> dict:
+    def to_dict(self) -> dict:
+        """Convert the parameters to a json object"""
         return {"name": self.name.value,
                 "width": self.width.value,
                 "height": self.height.value,
@@ -165,7 +195,8 @@ class MicroexpansionPatternParameters(MillingPatternParameters):
         }
 
     @staticmethod
-    def from_json(data: dict):
+    def from_dict(data: dict) -> 'MicroexpansionPatternParameters':
+        """Create a MicroexpansionPatternParameters object from a json object"""
         return MicroexpansionPatternParameters(
                         width=data["width"],
                         height=data["height"],
@@ -174,12 +205,11 @@ class MicroexpansionPatternParameters(MillingPatternParameters):
                         center=(data.get("center_x", 0), data.get("center_y", 0)),
                         name=data.get("name", "Microexpansion"))
 
-    def __repr__(self):
-        return f"{self.to_json()}"
+    def __repr__(self) -> str:
+        return f"{self.to_dict()}"
 
-
-    def generate(self):
-        """Generate a list of milling patterns for the microscope"""
+    def generate(self) -> List[MillingPatternParameters]:
+        """Generate a list of milling shapes for the microscope"""
         name = self.name.value
         width = self.width.value
         height = self.height.value
@@ -210,6 +240,7 @@ class MicroexpansionPatternParameters(MillingPatternParameters):
 
         return patterns
 
+# dictionary to map pattern names to pattern classes
 pattern_generator = {
     "rectangle": RectanglePatternParameters,
     "trench": TrenchPatternParameters,

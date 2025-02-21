@@ -354,8 +354,20 @@ def align_reference_image(
     new_image: model.DataArray,
     scanner: model.Emitter
 ) -> None:
-    """Align the new image to the reference image using beam shift."""
-    shift_px = MeasureShift(ref_image, new_image, 10)
+    """Align the new image to the reference image using beam shift.
+    Only supports 2D images with the same resolution.
+    :param ref_image: The reference image to align with.
+    :param new_image: The new image to align to the reference.
+    :param scanner: The scanner to align with.
+    :return: None
+    """
+    if (ref_image.ndim != 2 or new_image.ndim != 2 or ref_image.shape != new_image.shape):
+        raise ValueError(f"Only equally sized 2D images are supported for alignment. {ref_image.shape}, {new_image.shape}")
+
+    if ref_image.metadata[model.MD_PIXEL_SIZE] != new_image.metadata[model.MD_PIXEL_SIZE]:
+        raise ValueError("The images must have the same pixel size.")
+
+    shift_px = MeasureShift(ref_image, new_image, 2)
 
     pixelsize = ref_image.metadata[model.MD_PIXEL_SIZE]
     shift_m = (shift_px[0] * pixelsize[0], shift_px[1] * pixelsize[1])

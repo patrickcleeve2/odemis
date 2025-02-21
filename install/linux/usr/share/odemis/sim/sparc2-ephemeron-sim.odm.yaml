@@ -1,5 +1,7 @@
-# Configuration for a simulated SPARC v2 system
-"SPARCv2 Streakcam": {
+# Configuration for a simulated SPARC v2 system with a EBIC detector which must
+# be independently configured (instead of it being a simple detector on by the
+# SEM scan board)
+"SPARC2 Independent EBIC Ephemeron": {
     class: Microscope,
     role: sparc2,
 }
@@ -9,7 +11,7 @@
     class: light.Light,
     role: "brightlight",
     power_supplier: "Power Control Unit",
-    affects: ["Camera", "Spectrometer Vis-NIR"],
+    affects: ["VisNIR Camera", "VisNIR Spectrometer"],
 }
 
 "Power Control Unit": {
@@ -17,82 +19,104 @@
     role: "power-control",
     init: {
         port: "/dev/fake", # for simulator
-        pin_map: {"Calibration Light": 0, "CL PMT control unit": 3,
-                  "Camera": 4, "Spectrograph": 6,
+        pin_map: {"Calibration Light": 0,
+                  "CL PMT control unit": 3,
+                  "VisNIR Camera": 4,
+                  "Spectrograph": 6,
                   "Optical Actuators": 2},
         delay: { # Time it takes before a component is accessible
             "Calibration Light": 3, # s, the light takes some time to actually turn on
             "CL PMT control unit": 0,
-            "Camera": 1,
+            "VisNIR Camera": 1,
             "Spectrograph": 1,
             "Optical Actuators": 1
         },
         init: { # Which component to power on from the very beginning (to save time)
-            "Camera": True,
+            "VisNIR Camera": True,
             "Spectrograph": True,
             "Optical Actuators": True
         },
     }
 }
 
-# Can simulate a SEM connected to a DAQ board by using the comedi_test driver:
-# sudo modprobe comedi comedi_num_legacy_minors=4
-# sudo modprobe comedi_test
-# sudo comedi_config /dev/comedi0 comedi_test 1000000,1000000
+# Can simulate a SEM connected to a DAQ board by using the simulated NI card.
+# Need to install it with:
+# nidaqmxconfig --import ni-pci6363-sim.nce --replace
 "SEM Scan Interface": {
-    class: semcomedi.SEMComedi,
+    class: semnidaq.AnalogSEM,
     role: null,
-    init: {device: "/dev/comedi0"},
+    init: {
+        device: "Dev1",
+        multi_detector_min_period: 2.e-6,  # s, to limit sampling frequency when acquiring with multiple detectors (and reduce cross-talk)
+    },
     # more detectors can be added, if necessary
     children: {
-       scanner: "SEM E-beam",
-       detector0: "SEM Detector",
-       detector1: "CL PMT",
-       detector2: "EBIC",
-    }
+        scanner: "SEM E-beam",
+        detector0: "SEM Detector",
+        detector1: "CL PMT",
+    },
 }
 
 # Connect:
 # X -> AO 0
 # Y -> AO 1
 # Ground -> AO GND
+# P0.16 -> MightyEBIC
 "SEM E-beam": {
-    # Internal child of SEM ExtXY, so no class
     role: e-beam,
     init: {
-        channels: [1, 0],
-        limits: [[0, 5], [0, 5]],  # V
-        park: [0, 0], # V
-        settle_time: 5.e-6, # s
-        hfw_nomag: 0.25, # m
+        channels: [0, 1],
+        # On Delmic scanning box v2, the voltage is x2, so need to specify twice smaller values than needed.
+        max_res: [4096, 3072], # px, to force 4:3 ratio
+        limits: [[-4.85, 4.85], [-3.64, 3.64]],  # V
+        park: [-5, -5], # V
+        scan_active_delay: 1.e-3,  # s, time to wait between setting "external" and starting to scan
+
+        settle_time: 120.e-6,  # s
+        hfw_nomag: 0.2756,  # m
+        # output ports -> [high_auto, high_enabled, prop_name]
+        # * high_auto: True = high when scanning, False = high when parked
+        # * high_enabled: True = high when property set to True, False = high when set to False
+        # * prop_name: name of the property to control it (null to not show any property)
+        # Digital output port mapping on the Delmic scanning box v2:
+        # 0 = Relay
+        # 1 = Open drain output (Y0.0)
+        # 2 = Digital Out 1
+        # 3 = Digital Out 0
+        # 4 = Status led
+        scanning_ttl: {
+            3: [True, True, "external"],  # High when scanning, High when VA set to True
+            4: [True, True, null],  # status LED
+        },
+        # Pixel signal to synchronize with the cameras
+        image_ttl: {
+            pixel: {
+                 ports: [16],  # P0.16 is (confusingly) noted as PFI0/P1.0 on the BNC-2110
+                 inverted: [True],
+                 affects: ["EBIC Detector",],
+            },
+        },
     },
-    properties: {
-        scale: [8, 8], # (ratio) : start with a pretty fast scan
-        dwellTime: 10.e-6, # s
-        magnification: 100, # (ratio)
-    },
-    affects: ["SEM Detector", "Camera", "EBIC"] # affects the CCD in case of cathodoluminescence
+        affects: ["SEM Detector", "VisNIR Camera", "VisNIR Spectrometer", "EBIC Detector", "CL Detector"] # affects the CCD in case of cathodoluminescence
 }
 
-# Must be connected on AI 0/AI GND
+# Must be connected on AI1/AI9 (differential)
 "SEM Detector": { # aka ETD
-    # Internal child of SEM Scan Interface, so no class
+    # role: null,  # Needs to be null if using "SEM Detector Full"
     role: se-detector,
     init: {
-        channel: 0, # 0-> sawtooth waves, 1-> square waves
-        limits: [-3, 3] # V
+        channel: 1,
+        limits: [-3, 3], # V
     },
 }
 
-# CL PMT: composed of the control unit + the PMT output connected to the DAQ board
-
-# Must be connected on AI 1/AI GND
+# If not used by the rest of the system, it's fine.
+# Must be connected on AI0/AI8 (differential)
 "CL PMT": { # the raw detector of the PMT
-    # Internal child of SEM Scan Interface, so no class
     role: null,
     init: {
-        channel: 1, # 0-> sawtooth waves, 1-> square waves
-        limits: [3, 0], # V, with contrast reversed
+        channel: 0,
+        limits: [-2.5, 2.5], # V
     },
 }
 
@@ -119,21 +143,20 @@
     },
 }
 
-# EBIC: In either configuration, the signal is either ±10V or ±5V. As the signal can be positive and negative, is uses the full range.
-# Must be connected on AI 2/AI 10 (differential)
-"EBIC": {
-    # Internal child of SEM Scan Interface, so no class
+# A detector which is independent from the DAQ board. Though in reality, it's
+# synchronized on the "newPixel" TTL signal of the DAQ board scanner.
+"EBIC Detector": {
+    class: ephemeron.MightyEBIC,
     role: ebic-detector,
     init: {
-        channel: 2,
-        limits: [-10, 10], # V
+        channel: 0,  # should correspond to the EBIC channel on the MightyEBIC
+        url: "fake",  # simulated
     },
 }
 
-
 # In reality, this is a Zyla, but you need libandor3-dev to simulate an AndorCam3
 # Depending exactly on the configuration, it might also be used for spectrometer
-"Camera": {
+"VisNIR Camera": {
     class: andorcam2.AndorCam2,
     role: ccd,
     power_supplier: "Power Control Unit",
@@ -143,127 +166,13 @@
     },
 }
 
-"Spectrometer Vis-NIR": {
+"VisNIR Spectrometer": {
     class: spectrometer.CompositedSpectrometer,
     role: spectrometer,
-    dependencies: {detector: "Camera", spectrograph: "Spectrograph"},
+    dependencies: {detector: "VisNIR Camera", spectrograph: "Spectrograph"},
     init: {
         transp: [1, -2], # only applied to the spectrometer data (not raw CCD)
     },
-}
-
-"E-beam blanker pulse generator": {
-    role: ebeam-blanker,
-    class: keysight.TrueForm,
-    init: {
-        address: "fake",  # "fake" (to start the simulator) or an IP address
-        channel: 1,
-        limits: [[-4.0, 4.0], [-5.0, 5.0]],  # min/max (in V)
-        tracking: {2: "INV"},
-        off_voltage: [0.0, null],  # V, null = "output disabled"
-    },
-    affects: ["SEM E-beam", "Streak Readout CCD"],
-}
-
-# simple simulated streak camera
-"Streak Camera": {
-    class: simstreakcam.StreakCamera,
-    role: streak-cam,
-    init: {
-    },
-    children: {
-        readoutcam: "Streak Readout CCD",
-        delaybox: "Streak Delay Generator",
-        streakunit: "Streak Unit"
-    },
-    dependencies: {
-        spectrograph: "Spectrograph"
-    },
-}
-
-# for testing with real HW
-#"Streak Camera": {
-#    class: hamamatsurx.StreakCamera,
-#    role: streak-cam,
-#    init: {
-#        host: "172.16.4.2",  # Braunschweig System
-#        port: 1001
-#    },
-#    children: {
-#        readoutcam: "Streak Readout CCD",
-#        delaybox: "Streak Delay Generator",
-#        streakunit: "Streak Unit"
-#    },
-#    dependencies: {
-#        spectrograph: "Spectrograph"
-#    },
-#}
-
-"Streak Readout CCD": {
-    role: streak-ccd,
-    init: {
-        image: "sparc-ar-mirror-align.h5",  # only for simulator!  TODO replace with streak image
-#       device: 0,
-        transp: [-1, 2], # if mirrored on X axis
-    },
-    metadata: {
-        CALIB: {"intensity_limit": 50000},  # counts/s, high max to not trigger easily the safety check
-    },
-}
-
-"Streak Unit": {
-    role: streak-unit,
-    init: {
-#        settings_ini: "C:\ProgramData\Hamamatsu\HPDTA\SingleSweep.ini" # path of the .ini file for HPDTA to run
-    },
-    affects: ["Streak Readout CCD"],
-}
-
-"Streak Delay Generator": {
-    role: streak-delay,
-    init: {
-    },
-    metadata: {
-        TIME_RANGE_TO_DELAY: {
-          # timeRange (s) -> triggerDelay (s)
-            1.0e-09: 7.99e-9,  # 1ns
-            2.e-09: 9.63e-9,  # 2ns
-            5.e-09: 3.32e-8,  # 5ns
-            1.e-08: 4.59e-8,  # 10ns
-            2.e-08: 6.64e-8,  # 20ns
-            5.e-08: 1.02e-7,  # 50ns
-            1.e-07: 1.69e-7,  # 100ns
-            2.e-07: 3.02e-7,  # 200ns
-            5.e-07: 7.31e-7,  # 500ns
-            1.e-06: 1.39e-6,  # 1us
-            2.e-06: 2.69e-6,  # 2us
-            5.e-06: 7.02e-6,  # 5us
-            1.e-05: 1.38e-5,  # 10us
-            2.e-05: 2.67e-5,  # 20us
-            5.e-05: 8.16e-5,  # 50us
-            1.e-04: 1.61e-4,  # 100us
-            2.e-04: 3.20e-4,  # 200us
-            5.e-04: 7.98e-4,  # 500us
-            1.e-03: 1.62e-3,  # 1ms
-            2.e-03: 3.18e-3,  # 2ms
-            5.e-03: 7.88e-3,  # 5ms
-            1.e-02: 1.54e-2,  # 10ms
-        },
-    },
-    affects: ["Streak Unit", "Streak Readout CCD"],
-}
-
-"Streak Lens": {
-    class: static.OpticalLens,
-    role: streak-lens,
-    init: {
-        mag: 0.476,  # set default value
-        mag_choices: [1, 0.476],  # second is de-magnifying: 0.476 = 1/2.1
-    },
-    persistent: {
-        properties: [magnification],
-    },
-    affects: ["Streak Readout CCD"],
 }
 
 "Spectrograph": {
@@ -276,15 +185,15 @@
         },
         bands: { # The filters in the filter-wheel
             1: [320.e-9, 400.e-9], # pos -> m,m
-            2: [500.e-9, 550.e-9],
-            3: [400.e-9, 450.e-9],
-            4: "polariser",
+            2: [400.e-9, 450.e-9],
+            3: [500.e-9, 550.e-9],
+            4: [550.e-9, 600.e-9],
             6: "pass-through"
         },
         fstepsize: 10.9e-6, # m, size of one focus step (very roughly)
         rng: {"focus": [10.9e-6, 4.9e-3]},  # the hardware has an issue, and cannot go further than 4.9mm (instead of the standard 6.5 mm)
     },
-    affects: ["Camera", "Spectrometer Vis-NIR", "Streak Readout CCD"],
+    affects: ["VisNIR Camera", "VisNIR Spectrometer"],
 }
 
 "Spectrograph focus": {
@@ -294,7 +203,7 @@
     init: {
         axes_map: {"z": "focus"},
     },
-    affects: ["Camera", "Spectrometer Vis-NIR", "Streak Readout CCD"],
+    affects: ["VisNIR Camera", "VisNIR Spectrometer"],
 }
 
 # Provide the mirror (aka port selector) of the spectrograph as a separate component
@@ -305,11 +214,11 @@
     init: {
         axis_name: "flip-out",
         positions: {
-            0: ["Streak Readout CCD"],
-            1.5707963267948966: ["Camera", "Spectrometer Vis-NIR"],
+            0: [],  # No detector on this position
+            1.5707963267948966: ["VisNIR Camera", "VisNIR Spectrometer"],
         },
     },
-    affects: ["Camera", "Streak Readout CCD", "Spectrometer Vis-NIR"],
+    affects: ["VisNIR Camera", "VisNIR Spectrometer"],
 }
 
 # Provide the filter wheel of the spectrograph as a separate component
@@ -320,7 +229,7 @@
     init: {
         axes_map: {"band": "band"},
     },
-    affects: ["Camera", "Spectrometer Vis-NIR", "Streak Readout CCD"],
+    affects: ["VisNIR Camera", "VisNIR Spectrometer"],
 }
 
 "Optical Path Properties": {
@@ -338,7 +247,7 @@
        parabola_f: 2.5e-3,  # m, parabola_parameter=1/4f
        rotation: -1.570796326795, # rad, 90° rotation between optical axis and SEM Y axis
     },
-    affects: ["Camera", "Spectrometer Vis-NIR", "Streak Readout CCD"]
+    affects: ["VisNIR Camera", "VisNIR Spectrometer"]
 }
 
 # Controller for the motors moving the various parts of the optical box
@@ -371,7 +280,7 @@
         # Default position of the lens (can be improved by user)
         FAV_POS_ACTIVE: {"x": 0.0045} # m
     },
-    affects: ["Camera", "Spectrometer Vis-NIR", "Streak Readout CCD"],
+    affects: ["VisNIR Camera", "VisNIR Spectrometer"],
 }
 
 # The second lens of Plate 1, either to working or parking position
@@ -386,7 +295,7 @@
             0.002: "off", # completely out of the path
         },
     },
-    affects: ["Camera", "Spectrometer Vis-NIR", "Streak Readout CCD"],
+    affects: ["VisNIR Camera", "VisNIR Spectrometer"],
 }
 
 # Control the slit position to either fully-open or small (dependent on the spectrometer slit-in)
@@ -401,7 +310,7 @@
             -0.0012: "off", # opening based on the small slit
         },
     },
-    affects: ["Camera", "Spectrometer Vis-NIR", "Streak Readout CCD"],
+    affects: ["VisNIR Camera", "VisNIR Spectrometer"],
 }
 
 # Mirror in Plate 2, selects between spectrometer and cl-detector
@@ -416,7 +325,7 @@
             0.01: ["Spec CCD Flipper"]
         },
     },
-    affects: ["Camera", "Spectrometer Vis-NIR", "Streak Readout CCD", "CL Detector"],
+    affects: ["VisNIR Camera", "VisNIR Spectrometer", "CL Detector"],
 }
 
 "CL Filter Wheel": {
@@ -465,7 +374,7 @@
     dependencies: {"orig": "Mirror Actuators"},
     init: {
         axes: ["l", "s"], # mapped respectively to X, Y
-        rotation: -1.0471975511965976, # rad (= 60°)
+        rotation: -1.0471975511965976, # rad (= -60°)
         # Note: if you want to use absolute moves, add a "translation" too
     },
 }

@@ -573,11 +573,14 @@ class MultipleDetectorStream(Stream, metaclass=ABCMeta):
         return pos
 
     @abstractmethod
-    def _runAcquisition(self, future):
+    def _runAcquisition(self, future) -> Tuple[List[model.DataArray], Optional[Exception]]:
         """
         Acquires images from the multiple detectors via software synchronisation.
         Warning: can be quite memory consuming if the grid is big
-        returns (list of DataArray): all the data acquired
+        :returns
+            list of DataArray: All the data acquired.
+            error: None if everything went fine, an Exception if an error happened, but some data has
+              already been acquired.
         raises:
           CancelledError() if cancelled
           Exceptions if error
@@ -1235,6 +1238,15 @@ class SEMCCDMDStream(MultipleDetectorStream):
             # CCD to be sure it is not slowing thing down.
             self._emitter.dwellTime.value = self._emitter.dwellTime.clip(exp + readout)
 
+        # Order matters (a bit). At least, on the Tescan, only the "external" waits extra time to ensure
+        # a stable e-beam condition, so it should be done last.
+        if model.hasVA(self._emitter, "blanker") and self._emitter.blanker.value is None:
+            # When the e-beam is set to automatic blanker mode, it would switch on/off for every
+            # block of acquisition. This is not efficient, and can disrupt the e-beam. So we force
+            # "blanker" off while the acquisition is running.
+            self._orig_hw_values[self._emitter.blanker] = self._emitter.blanker.value
+            self._emitter.blanker.value = False
+
         if model.hasVA(self._emitter, "external") and self._emitter.external.value is None:
             # When the e-beam is set to automatic external mode, it would switch on/off for every
             # block of acquisition. This is not efficient, and can disrupt the e-beam. So we force
@@ -1262,7 +1274,7 @@ class SEMCCDMDStream(MultipleDetectorStream):
 
         self._raw.append(da)
 
-    def _runAcquisition(self, future):
+    def _runAcquisition(self, future) -> Tuple[List[model.DataArray], Optional[Exception]]:
         """
         Acquires images from multiple detectors via software synchronisation.
         Select whether the ebeam is moved for scanning or the sample stage.
@@ -1361,7 +1373,7 @@ class SEMCCDMDStream(MultipleDetectorStream):
 
         return frame_duration_safe, integration_count
 
-    def _runAcquisitionHwSyncEbeam(self, future) -> List[model.DataArray]:
+    def _runAcquisitionHwSyncEbeam(self, future) -> Tuple[List[model.DataArray], Optional[Exception]]:
         """
         Acquires images from the multiple detectors by moving the ebeam, and triggering a CCD frame
         acquisition via hardware trigger connecting the e-beam scanner pixel position to the CCD.
@@ -1369,12 +1381,15 @@ class SEMCCDMDStream(MultipleDetectorStream):
         controlled by the e-beam scanner. In practice, typically there are just two streams: the SEM
         secondary electron detector and the CCD.
         :param future: Current future running for the whole acquisition.
-        :returns (list of DataArray): All the data acquired.
+        :returns
+            list of DataArray: All the data acquired.
+            error: None if everything went fine, an Exception if an error happened, but some data has
+              already been acquired.
         :raises:
           CancelledError() if cancelled
           Exceptions if error
         """
-
+        error = None
         try:
             self._acq_done.clear()
             # Configure the CCD to the defined exposure time, and hardware sync + get frame duration
@@ -1570,9 +1585,20 @@ class SEMCCDMDStream(MultipleDetectorStream):
             if not isinstance(exp, CancelledError) and self._acq_state == CANCELLED:
                 logging.warning("Converting exception to cancellation")
                 raise CancelledError()
-            raise
-        else:
-            return self.raw
+
+            # If it wasn't finalized yet, finalize the data
+            if not self._raw:
+                try:
+                    # Process all the (intermediary) ._live_data to the right shape/format for the final ._raw
+                    for stream_idx, das in enumerate(self._live_data):
+                        self._assembleFinalData(stream_idx, das)
+                except Exception:
+                    logging.warning("Failed to assemble the final data after exception in stream %s", self.name.value)
+
+            if not self._raw:
+                # No data -> just make it look like a "complete" exception
+                raise exp
+            error = exp
         finally:
             # In case of frame drop issue, create a ccd_dates list at the top of the function, and
             # uncomment the lines related to ccd_dates to analyse the timing:
@@ -1599,18 +1625,24 @@ class SEMCCDMDStream(MultipleDetectorStream):
             self._streams[0].raw = []
             self._streams[0].image.value = None
 
-    def _runAcquisitionEbeam(self, future):
+        return self.raw, error
+
+    def _runAcquisitionEbeam(self, future) -> Tuple[List[model.DataArray], Optional[Exception]]:
         """
         Acquires images from the multiple detectors via software synchronisation.
         Acquires images via moving the ebeam.
         Warning: can be quite memory consuming if the grid is big
         :param future: Current future running for the whole acquisition.
-        :returns (list of DataArray): All the data acquired.
+        :returns
+            list of DataArray: All the data acquired.
+            error: None if everything went fine, an Exception if an error happened, but some data has
+              already been acquired.
         :raises:
           CancelledError() if cancelled
-          Exceptions if error
+          Exceptions if error, and no data has been acquired
         """
         # TODO: handle better very large grid acquisition (than memory oops)
+        error = None
         try:
             self._acq_done.clear()
             img_time, integration_count = self._adjustHardwareSettings()
@@ -1813,14 +1845,27 @@ class SEMCCDMDStream(MultipleDetectorStream):
                 s._dataflow.unsubscribe(sub)
             self._ccd_df.synchronizedOn(None)
 
-            self._raw = []
-            self._anchor_raw = []
             if not isinstance(exp, CancelledError) and self._acq_state == CANCELLED:
+                # Reset data in case it was cancelled very late, to regain memory
+                self._raw = []
+                self._anchor_raw = []
                 logging.warning("Converting exception to cancellation")
                 raise CancelledError()
-            raise
-        else:
-            return self.raw
+
+            # If it wasn't finalized yet, finalize the data
+            if not self._raw:
+                try:
+                    # Process all the (intermediary) ._live_data to the right shape/format for the final ._raw
+                    for stream_idx, das in enumerate(self._live_data):
+                        self._assembleFinalData(stream_idx, das)
+                except Exception:
+                    logging.warning("Failed to assemble the final data after exception in stream %s", self.name.value)
+
+            if not self._raw:
+                # No data -> just make it look like a "complete" exception
+                raise exp
+
+            error = exp
         finally:
             self._current_scan_area = None  # Indicate we are done for the live (also in case of error)
             for s in self._streams:
@@ -1835,6 +1880,8 @@ class SEMCCDMDStream(MultipleDetectorStream):
             self._streams[0].raw = []
             self._streams[0].image.value = None
             self._img_intor = [None for _ in self._streams]
+
+        return self.raw, error
 
     def _waitForImage(self, img_time):
         """
@@ -1996,11 +2043,14 @@ class SEMCCDMDStream(MultipleDetectorStream):
         # TODO if image integration supported for scan stage, return both values
         return self._adjustHardwareSettings()[0]
 
-    def _runAcquisitionScanStage(self, future):
+    def _runAcquisitionScanStage(self, future) -> Tuple[List[model.DataArray], Optional[Exception]]:
         """
         Acquires images from the multiple detectors via software synchronisation, with a scan stage.
         Warning: can be quite memory consuming if the grid is big
-        returns (list of DataArray): all the data acquired
+        :returns
+            list of DataArray: All the data acquired.
+            error: None if everything went fine, an Exception if an error happened, but some data has
+              already been acquired.
         raises:
           CancelledError() if cancelled
           Exceptions if error
@@ -2031,6 +2081,7 @@ class SEMCCDMDStream(MultipleDetectorStream):
         orig_spos = sstage.position.value  # TODO: need to protect from the stage being outside of the axes range?
         scan_stage_is_stage = model.getComponent(role="stage").name in sstage.affects.value
 
+        error = None
         try:
             saxes = sstage.axes
             prev_spos = orig_spos.copy()
@@ -2260,14 +2311,25 @@ class SEMCCDMDStream(MultipleDetectorStream):
                 s._dataflow.unsubscribe(sub)
             self._ccd_df.synchronizedOn(None)
 
-            self._raw = []
-            self._anchor_raw = []
             if not isinstance(exp, CancelledError) and self._acq_state == CANCELLED:
+                self._raw = []
+                self._anchor_raw = []
                 logging.warning("Converting exception to cancellation")
                 raise CancelledError()
-            raise
-        else:
-            return self.raw
+
+            # If it wasn't finalized yet, finalize the data
+            if not self._raw:
+                try:
+                    # Process all the (intermediary) ._live_data to the right shape/format for the final ._raw
+                    for stream_idx, das in enumerate(self._live_data):
+                        self._assembleFinalData(stream_idx, das)
+                except Exception:
+                    logging.warning("Failed to assemble the final data after exception in stream %s", self.name.value)
+
+            if not self._raw:
+                # No data -> just make it look like a "complete" exception
+                raise exp
+            error = exp
         finally:
             self._current_scan_area = None  # Indicate we are done for the live (also in case of error)
             if sstage:
@@ -2295,6 +2357,7 @@ class SEMCCDMDStream(MultipleDetectorStream):
             self._streams[0].raw = []
             self._streams[0].image.value = None
 
+        return self.raw, error
 
 class SEMMDStream(MultipleDetectorStream):
     """
@@ -2354,25 +2417,20 @@ class SEMMDStream(MultipleDetectorStream):
         if cscale != scale:
             logging.warning("Emitter scale requested (%s) != accepted (%s)",
                             cscale, scale)
+        self._emitter.scale.value = cscale
 
         # TODO: check that no fuzzing is requested (as it's not supported and
         # not useful).
 
-        # If a detector is "independent", then connect its dwell time
-        # Note: resolution is updated later, just before the acquisition block
-        # TODO: should it be done automatically by the "SettingsStream" in .prepare() or .linkHwVA()?
         dt = self._dwellTime.value
-        for s in self._streams:
-            det = s._detector
-            if model.hasVA(det, "resolution"):
-                det.dwellTime.value = dt
-                # It's fine to a have dwell time slightly shorter (it will wait a tiny bit after acquiring
-                # each pixel), but not longer.
-                if det.dwellTime.value > dt:
-                    logging.warning("Failed to set the dwell time of %s to %s s: %s s accepted",
-                                    det.name, dt, det.dwellTime.value)
 
-        self._emitter.scale.value = cscale
+        # Order matters (a bit)
+        if model.hasVA(self._emitter, "blanker") and self._emitter.blanker.value is None:
+            # When the e-beam is set to automatic blanker mode, it would switch on/off for every
+            # block of acquisition. This is not efficient, and can disrupt the e-beam. So we force
+            # "blanker" off while the acquisition is running.
+            self._orig_hw_values[self._emitter.blanker] = self._emitter.blanker.value
+            self._emitter.blanker.value = False
 
         if model.hasVA(self._emitter, "external") and self._emitter.external.value is None:
             # When the e-beam is set to automatic external mode, it would switch on/off for every
@@ -2414,15 +2472,19 @@ class SEMMDStream(MultipleDetectorStream):
 
         return n_y, n_x
 
-    def _runAcquisition(self, future):
+    def _runAcquisition(self, future) -> Tuple[List[model.DataArray], Optional[Exception]]:
         """
         Acquires images from the multiple detectors via software synchronisation.
         Warning: can be quite memory consuming if the grid is big
-        returns (list of DataArray): all the data acquired
+        :returns
+            list of DataArray: All the data acquired.
+            error: None if everything went fine, an Exception if an error happened, but some data has
+              already been acquired.
         raises:
           CancelledError() if cancelled
           Exceptions if error
         """
+        error = None
         try:
             self._acq_done.clear()
             # TODO: the real dwell time used depends on how many detectors are used, and so it can
@@ -2435,7 +2497,7 @@ class SEMMDStream(MultipleDetectorStream):
             pos_flat = spot_pos.reshape((-1, 2))  # X/Y together (X iterates first)
             rep = self.repetition.value
             self._acq_data = [[] for _ in self._streams]  # just to be sure it's really empty
-            self._live_data = [[] for s in self._streams]
+            self._live_data = [[] for _ in self._streams]
             self._current_scan_area = (0, 0, 0, 0)
             self._raw = []
             self._anchor_raw = []
@@ -2479,9 +2541,11 @@ class SEMMDStream(MultipleDetectorStream):
                                      ((n_x, n_y), em_res))
 
                 # Update the resolution of the "independent" detectors
+                has_inde_detectors = False
                 for s in self._streams:
                     det = s._detector
                     if model.hasVA(det, "resolution"):
+                        has_inde_detectors = True
                         det.resolution.value = (n_x, n_y)
                         # It's unlikely but the detector could have specific constraints on the resolution
                         # and refuse the requested one => better fail early.
@@ -2489,7 +2553,8 @@ class SEMMDStream(MultipleDetectorStream):
                             raise ValueError(f"Failed to set the resolution of {det.name} to {n_x} x {n_y} px: "
                                              f"{det.resolution.value} px accepted")
                         else:
-                            logging.debug("Set resolution of independent detector %s to %s", det.name, (n_x, n_y))
+                            logging.debug("Set resolution of independent detector %s to %s",
+                                          det.name, (n_x, n_y))
 
                 # Move the beam to the center of the sub-frame
                 trans = tuple(pos_flat[spots_sum:(spots_sum + npixels2scan)].mean(axis=0))
@@ -2513,6 +2578,12 @@ class SEMMDStream(MultipleDetectorStream):
                 self._df0.synchronizedOn(self._trigger)
                 for s, sub in zip(self._streams, self._subscribers):
                     s._dataflow.subscribe(sub)
+
+                if has_inde_detectors:
+                    # The independent detectors might need a bit of time to be ready.
+                    # If not waiting, the first pixels might be missed.
+                    time.sleep(0.05)
+
                 start = time.time()
                 self._acq_min_date = start
                 self._trigger.notify()
@@ -2522,12 +2593,15 @@ class SEMMDStream(MultipleDetectorStream):
                 px_pos = (pos_lt[0] + px_idx[1] * self._pxs[0],
                           pos_lt[1] - px_idx[0] * self._pxs[1])  # Y is inverted
 
+
+                # FIXME: updateImage fails with index out of range: raw_data = self._live_data[stream_idx][-1]
+
                 # Wait for all the Dataflows to return the data. As all the
                 # detectors are linked together to the e-beam, they should all
                 # receive the data (almost) at the same time.
                 max_end_t = start + frame_time * 10 + 5
                 for i, s in enumerate(self._streams):
-                    timeout = max(0.1, max_end_t - time.time())
+                    timeout = max(5.0, max_end_t - time.time())
                     if not self._acq_complete[i].wait(timeout):
                         raise TimeoutError("Acquisition of repetition stream for frame %s timed out after %g s"
                                            % (self._emitter.translation.value, time.time() - max_end_t))
@@ -2616,14 +2690,30 @@ class SEMMDStream(MultipleDetectorStream):
                 s._dataflow.unsubscribe(sub)
             self._df0.synchronizedOn(None)
 
-            self._raw = []
-            self._anchor_raw = []
             if not isinstance(exp, CancelledError) and self._acq_state == CANCELLED:
-                logging.warning("Converting exception to cancellation", exc_info=True)
+                # Reset data in case it was cancelled very late, to regain memory
+                self._raw = []
+                self._anchor_raw = []
+                logging.warning("Converting exception to cancellation")
                 raise CancelledError()
-            raise
-        else:
-            return self.raw
+
+            # If it wasn't finalized yet, finalize the data
+            if not self._raw:
+                try:
+                    # Process all the (intermediary) ._live_data to the right shape/format for the final ._raw
+                    for stream_idx, das in enumerate(self._live_data):
+                        if stream_idx == 0 and len(das) == 0:
+                            # It's OK to not have data for the SEM stream (e.g. Monochromator)
+                            continue
+                        self._assembleFinalData(stream_idx, das)
+                except Exception:
+                    logging.warning("Failed to assemble the final data after exception in stream %s", self.name.value)
+
+            if not self._raw:
+                # No data -> just make it look like a "complete" exception
+                raise exp
+
+            error = exp
         finally:
             self._current_scan_area = None  # Indicate we are done for the live (also in case of error)
             for s in self._streams:
@@ -2636,6 +2726,8 @@ class SEMMDStream(MultipleDetectorStream):
             self._dc_estimator = None
             self._current_future = None
             self._acq_done.set()
+
+        return self.raw, error
 
     def _updateImage(self):
         """
@@ -2776,7 +2868,10 @@ class SEMTemporalMDStream(MultipleDetectorStream):
 
         return px_time, ninteg
 
-    def _runAcquisition(self, future):
+    def _runAcquisition(self, future) -> Tuple[List[model.DataArray], Optional[Exception]]:
+        """
+        Overrides MultipleDetectorStream._runAcquisition. See that function for doc.
+        """
         self._raw = []
         self._anchor_raw = []
 
@@ -2872,9 +2967,8 @@ class SEMTemporalMDStream(MultipleDetectorStream):
             raise  # Just don't log the exception
         except Exception:
             logging.exception("Failure during Correlator acquisition")
+            # TODO: once live data is supported, return the partial data
             raise
-        else:
-            return self.raw
         finally:
             logging.debug("TC acquisition finished")
             self._acq_done.set()
@@ -2882,6 +2976,8 @@ class SEMTemporalMDStream(MultipleDetectorStream):
             # to subpixel drift correction)
             self._tc_stream._detector.dwellTime.value = tc_dt
             self._emitter.dwellTime.value = emitter_dt
+
+        return self.raw, None
 
     def _acquireImage(self, x, y, img_time):
         try:
@@ -3044,6 +3140,7 @@ class SEMAngularSpectrumMDStream(SEMCCDMDStream):
 
         self._raw.extend(data)
 
+STREAK_CCD_INTENSITY_MAX_PX_COUNT = 10  # px, max number of pixels allowed above the threshold
 
 class SEMTemporalSpectrumMDStream(SEMCCDMDStream):
     """
@@ -3052,19 +3149,47 @@ class SEMTemporalSpectrumMDStream(SEMCCDMDStream):
     Data format: SEM (2D=XY) + TemporalSpectrum(4D=CT1YX).
     """
 
-    def _runAcquisition(self, future):
+    def _runAcquisition(self, future) -> Tuple[List[model.DataArray], Optional[Exception]]:
         """
         Acquires images from multiple detectors via software synchronisation.
         Select whether the ebeam is moved for scanning or the sample stage.
         :param future: Current future running for the whole acquisition.
         """
         try:
-            das = super()._runAcquisition(future)
+            # Compute the max safe intensity value, based on the exposure time
+            if self._integrationTime:
+                # calculate exposure time to be set on detector
+                exp = self._integrationTime.value / self._integrationCounts.value  # get the exp time from stream
+                exp = self._ccd.exposureTime.clip(exp)  # set the exp time on the HW VA
+            else:
+                # stream has exposure time
+                exp = self._sccd._getDetectorVA("exposureTime").value  # s
+
+            # Clip to the maximum value of the detector, otherwise we might never detect high intensity
+            # for long exposure times. Should be defined on the streak-ccd.metadata[MD_CALIB]["intensity_limit"]
+            # as count/s.
+            max_det_value = self._ccd.shape[2] - 1
+            ccd_md = self._ccd.getMetadata()
+
+            intensity_limit_cps = ccd_md.get(model.MD_CALIB, {}).get("intensity_limit", 40000)
+            self._intensity_limit_cpf = min(intensity_limit_cps * exp, max_det_value)  # counts/frame
+            logging.debug("Streak CCD intensity threshold set to %s counts/frame", self._intensity_limit_cpf)
+
+            das, error = super()._runAcquisition(future)
         finally:
             # Make sure the streak-cam is protected
             self._sccd._suspend()
 
-        return das
+        return das, error
+
+    def _acquireImage(self, n, px_idx, img_time, sem_time,
+                      tot_num, leech_nimg, extra_time, future):
+        # overrides the default _acquireImage to check the light intensity after every image from the
+        # CCD, even when using integration time.
+        super()._acquireImage(n, px_idx, img_time, sem_time, tot_num, leech_nimg, extra_time, future)
+        ccd_data = self._acq_data[self._ccd_idx][-1]
+
+        self._check_light_intensity(ccd_data)
 
     def _assembleLiveData(self, n: int, raw_data: model.DataArray,
                           px_idx: Tuple[int, int], px_pos: Tuple[float, float],
@@ -3102,6 +3227,21 @@ class SEMTemporalSpectrumMDStream(SEMCCDMDStream):
         # Detector image has a shape of (time, lambda)
         raw_data = raw_data.T  # transpose to (lambda, time)
         self._live_data[n][pol_idx][:, :, 0, px_idx[0], px_idx[1]] = raw_data.reshape(spec_res, temp_res)
+
+    def _check_light_intensity(self, raw_data):
+        """
+        Check if the light intensity is too high or too low.
+        :param raw_data: CCD image (non-integrated)
+        """
+        # If there are more than N pixels above the threshold, it's a sign that the signal is too
+        # strong => raise an exception to stop the acquisition
+        num_high_px = numpy.sum(raw_data > self._intensity_limit_cpf)
+        if num_high_px > STREAK_CCD_INTENSITY_MAX_PX_COUNT:
+            # For safety, immediately protect the camera, although it will be done after raising the
+            # exception anyway.
+            self._sccd._suspend()
+            raise ValueError(f"Light intensity too high ({num_high_px} px > {self._intensity_limit_cpf}), stopping acquisition. "
+                             "Adjust using: odemis update-metadata streak-ccd CALIB '{intensity_limit: ...}'.")
 
 
 class SEMARMDStream(SEMCCDMDStream):
@@ -3243,8 +3383,8 @@ class ScannedFluoMDStream(MultipleDetectorStream):
         if self._acq_min_date > data.metadata.get(model.MD_ACQ_DATE, 0):
             # This is a sign that the e-beam might have been at the wrong (old)
             # position while Rep data is acquiring
-            logging.warning("Dropping data because it seems started %g s too early",
-                            self._acq_min_date - data.metadata.get(model.MD_ACQ_DATE, 0))
+            logging.warning("Dropping data (of stream %d) because it seems it started %g s too early",
+                            n, self._acq_min_date - data.metadata.get(model.MD_ACQ_DATE, 0))
             if n == 0:
                 # As the first detector is synchronised, we need to restart it
                 # TODO: probably not necessary, as the typical reason it arrived
@@ -3258,11 +3398,13 @@ class ScannedFluoMDStream(MultipleDetectorStream):
             self._acq_complete[n].set()
             # TODO: unsubscribe here?
 
-    def _runAcquisition(self, future):
+    def _runAcquisition(self, future) -> Tuple[List[model.DataArray], Optional[Exception]]:
         """
         Acquires images from the multiple detectors via software synchronisation.
         Warning: can be quite memory consuming if the grid is big
-        returns (list of DataArray): all the data acquired
+        :returns
+            list of DataArray: All the data acquired.
+            error: None
         raises:
           CancelledError() if cancelled
           Exceptions if error
@@ -3327,8 +3469,6 @@ class ScannedFluoMDStream(MultipleDetectorStream):
                 logging.warning("Converting exception to cancellation")
                 raise CancelledError()
             raise
-        else:
-            return self.raw
         finally:
             for s in self._streams:
                 s._unlinkHwVAs()
@@ -3336,6 +3476,8 @@ class ScannedFluoMDStream(MultipleDetectorStream):
                 self._setting_stream.is_active.value = False
             self._current_future = None
             self._acq_done.set()
+
+        return self.raw, None
 
 
 class ScannedRemoteTCStream(LiveStream):
@@ -3471,7 +3613,7 @@ class ScannedRemoteTCStream(LiveStream):
 
         return scale, res, trans
 
-    def _runAcquisition(self, future):
+    def _runAcquisition(self, future) -> Tuple[List[model.DataArray], Optional[Exception]]:
         logging.debug("Starting FLIM acquisition")
         try:
             self._stream._linkHwVAs()
@@ -3544,7 +3686,7 @@ class ScannedRemoteTCStream(LiveStream):
                     raise CancelledError()
                 self._acq_state = FINISHED
 
-        return self.raw
+        return self.raw, None
 
     def _onAcqStop(self, dataflow, data):
         pass
