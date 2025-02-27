@@ -79,11 +79,10 @@ class Weaver(metaclass=ABCMeta):
         rotation = self.tiles[0].metadata.get(model.MD_ROTATION, 0) #+ self.tiles[0].metadata.get(model.MD_BEAM_SCAN_ROTATION, 0)
         center_of_rot = self.tiles[0].metadata[model.MD_POS]
 
-        is_imported = False
-        if is_imported:
+        # we use the following heuristic to determine if the image was acquired with odemis or imported
+        if model.MD_EXTRA_SETTINGS not in self.tiles[0].metadata:
             scan_rotation = self.tiles[0].metadata.get(model.MD_BEAM_SCAN_ROTATION, 0)
             rotation += scan_rotation
-
 
         # TODO: for imported images with scan rotation, we need to flag it as such
         # and apply the rotation to the image, because the rotation is not also applied to
