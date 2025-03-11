@@ -42,7 +42,7 @@ from odemis.util.transform import RigidTransform, _get_transforms
 MAX_SUBMOVE_DURATION = 90  # s
 
 UNKNOWN, LOADING, IMAGING, ALIGNMENT, COATING, LOADING_PATH, MILLING, SEM_IMAGING, \
-    FM_IMAGING, GRID_1, GRID_2, THREE_BEAMS, FIB_IMAGING = -1, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11
+    FM_IMAGING, GRID_1, GRID_2, THREE_BEAMS, FIB_IMAGING, FM_FIB_VIEW = -1, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12
 POSITION_NAMES = {
     UNKNOWN: "UNKNOWN",
     LOADING: "LOADING",
@@ -56,7 +56,8 @@ POSITION_NAMES = {
     GRID_1: "GRID 1",
     GRID_2: "GRID 2",
     THREE_BEAMS: "THREE BEAMS",
-    FIB_IMAGING: "FIB_IMAGING"
+    FIB_IMAGING: "FIB_IMAGING",
+    FM_FIB_VIEW: "FM_FIB_VIEW"
 }
 
 RTOL_PROGRESS = 0.3
@@ -340,10 +341,14 @@ class MeteorPostureManager(MicroscopePostureManager):
         if isNearPosition(pos, stage_deactive, self.stage.axes):
             return LOADING
         if isInRange(pos, stage_fm_imaging_rng, self.linear_axes):
+            if self.at_milling_posture(pos, stage_md):
+                return FM_FIB_VIEW
             return FM_IMAGING
         if isInRange(pos, stage_sem_imaging_rng, self.linear_axes):
             if self.at_milling_posture(pos, stage_md):
                 return MILLING
+            if self.at_fib_posture(pos, stage_md):
+                return FIB_IMAGING
             return SEM_IMAGING
         # None of the above -> unknown position
         return UNKNOWN
@@ -358,6 +363,16 @@ class MeteorPostureManager(MicroscopePostureManager):
             stage_milling = self.get_posture_orientation(MILLING)
             if isNearPosition(pos,
                             stage_milling,
+                            self.rotational_axes,
+                            atol_rotation=math.radians(3)):
+                return True
+        return False
+
+    def at_fib_posture(self, pos: Dict[str, float], stage_md: Dict[str, float]) -> bool:
+        if model.MD_FAV_FIB_POS_ACTIVE in stage_md:
+            stage_fib = self.get_posture_orientation(FIB_IMAGING)
+            if isNearPosition(pos,
+                            stage_fib,
                             self.rotational_axes,
                             atol_rotation=math.radians(3)):
                 return True
@@ -382,6 +397,9 @@ class MeteorPostureManager(MicroscopePostureManager):
                                                         pre_tilt=self.pre_tilt,
                                                         column_tilt=math.radians(52))
             return {"rx": rx, "rz": md["rz"]}
+        elif posture == FM_FIB_VIEW:
+            return self.get_posture_orientation(MILLING)
+        return None
 
     def getTargetPosition(self, target_pos_lbl: int) -> Dict[str, float]:
         """
@@ -511,6 +529,12 @@ class MeteorPostureManager(MicroscopePostureManager):
         self._transforms[MILLING] = self._transforms[SEM_IMAGING]
         self._inv_transforms[MILLING] = self._inv_transforms[SEM_IMAGING]
 
+        self._transforms[FM_FIB_VIEW] = self._transforms[SEM_IMAGING]
+        self._inv_transforms[FM_FIB_VIEW] = self._inv_transforms[SEM_IMAGING]
+
+        self._transforms[FIB_IMAGING] = self._transforms[FM_IMAGING]
+        self._inv_transforms[FIB_IMAGING] = self._inv_transforms[FM_IMAGING]
+
         # add unknown as same as SEM IMAGING
         self._transforms[UNKNOWN] = self._transforms[SEM_IMAGING]
         self._inv_transforms[UNKNOWN] = self._inv_transforms[SEM_IMAGING]
@@ -524,11 +548,11 @@ class MeteorPostureManager(MicroscopePostureManager):
         # the inverse transformation is used for sample stage -> stage
 
         # pre-tilt is rotation around the stage-bare x axis
-        r = self.pre_tilt
+        rx = self.pre_tilt
         # note: this is currently for tfs, which does not have scale, shear or translation
 
         # rotation around x axis: fm = tf, sem = tf_inv
-        tf, tf_inv = _get_transforms(r)
+        tf, tf_inv = _get_transforms(rx)
 
         # TODO: enable scan rotation once complete
         self._get_scan_rotation_matrix()
@@ -536,16 +560,19 @@ class MeteorPostureManager(MicroscopePostureManager):
         logging.debug(f"tf_matrix: {tf}, sr_matrix: {self._sr_matrix}")
 
         tf_sr = numpy.dot(self._sr_matrix, tf)
-        # tf_inv_sr = self._sr_matrix_inv.dot(tf_inv)
         tf_inv_sr = numpy.linalg.inv(tf_sr)
 
         self._transforms2 = {FM_IMAGING: tf,
                              SEM_IMAGING: tf_inv_sr,
+                             FIB_IMAGING: tf_sr,
                              MILLING: tf_inv_sr,
+                             FM_FIB_VIEW: tf_inv_sr,
                              UNKNOWN: tf_inv_sr}
         self._inv_transforms2 = {FM_IMAGING: tf_inv,
                                  SEM_IMAGING: tf_sr,
                                  MILLING: tf_sr,
+                                 FM_FIB_VIEW: tf_sr,
+                                 FIB_IMAGING: tf_inv_sr,
                                  UNKNOWN: tf_sr}
 
     def _get_scan_rotation_matrix(self) -> Tuple[numpy.ndarray, numpy.ndarray]:
@@ -790,17 +817,27 @@ class MeteorPostureManager(MicroscopePostureManager):
         self._posture_transforms = {
             FM_IMAGING: {
                 SEM_IMAGING: self._transformFromMeteorToSEM,
-                MILLING: self._transform_from_fm_to_milling,
+                MILLING: self._transformFromMeteorToMilling,
             },
             SEM_IMAGING: {
                 FM_IMAGING: self._transformFromSEMToMeteor,
-                MILLING: self._transform_from_sem_to_milling,
+                MILLING: self._transformFromSEMToMilling,
             },
             MILLING: {
-                SEM_IMAGING: self._transform_from_milling_to_sem,
-                FM_IMAGING: self._transform_from_milling_to_fm,
+                SEM_IMAGING: self._transformFromMillingToSEM,
+                FM_IMAGING: self._transformFromMillingToMeteor,
                 # milling position can be dynamically updated, so we need to support this recalculation
-                MILLING: self._transform_from_sem_to_milling,
+                MILLING: self._transformFromSEMToMilling,
+                FIB_IMAGING: self._transformFromMillingToFIB,
+                FM_FIB_VIEW: self._transformFromMillingToMeteorFIBView,
+            },
+            FIB_IMAGING: {
+                FM_IMAGING: self._transformFromFIBToMeteor,
+                SEM_IMAGING: self._transformFromFIBToSEM,
+                MILLING: self._transformFromFIBToMilling,
+            },
+            FM_FIB_VIEW: {
+                MILLING: self._transformFromMeteorFIBViewToMilling,
             },
             UNKNOWN: {
                 UNKNOWN: lambda x: x
@@ -820,7 +857,7 @@ class MeteorPostureManager(MicroscopePostureManager):
 
         return tf(pos)
 
-    def _transform_from_sem_to_milling(self, pos: Dict[str, float]) -> Dict[str, float]:
+    def _transformFromSEMToMilling(self, pos: Dict[str, float]) -> Dict[str, float]:
         """
         Transforms the stage position from sem imaging to milling position"
         :param pos: (dict str->float) the current stage position
@@ -832,7 +869,7 @@ class MeteorPostureManager(MicroscopePostureManager):
 
         return position
 
-    def _transform_from_milling_to_sem(self, pos: Dict[str, float]) -> Dict[str, float]:
+    def _transformFromMillingToSEM(self, pos: Dict[str, float]) -> Dict[str, float]:
         """
         Transforms the stage position from milling to sem imaging position"
         :param pos: (dict str->float) the current stage position
@@ -844,7 +881,7 @@ class MeteorPostureManager(MicroscopePostureManager):
 
         return position
 
-    def _transform_from_fm_to_milling(self, pos: Dict[str, float]) -> Dict[str, float]:
+    def _transformFromMeteorToMilling(self, pos: Dict[str, float]) -> Dict[str, float]:
         """
         Transforms the stage position from fm imaging to milling position"
         :param pos: (dict str->float) the current stage position
@@ -852,17 +889,39 @@ class MeteorPostureManager(MicroscopePostureManager):
         """
         # simple chain of fm->sem->milling
         sem_pos = self._transformFromMeteorToSEM(pos)
-        return self._transform_from_sem_to_milling(sem_pos)
+        return self._transformFromSEMToMilling(sem_pos)
 
-    def _transform_from_milling_to_fm(self, pos: Dict[str, float]) -> Dict[str, float]:
+    def _transformFromMillingToMeteor(self, pos: Dict[str, float]) -> Dict[str, float]:
         """
         Transforms the stage position from milling to fm imaging position"
         :param pos: (dict str->float) the current stage position
         :return: (dict str->float) the transformed stage position.
         """
         # simple chain of milling->sem->fm
-        sem_pos = self._transform_from_milling_to_sem(pos)
+        sem_pos = self._transformFromMillingToSEM(pos)
         return self._transformFromSEMToMeteor(sem_pos)
+    
+    def _transformFromMillingToFIB(self, pos: Dict[str, float]) -> Dict[str, float]:
+        # simple chain of milling->sem->fib
+        sem_pos = self._transform_from_milling_to_sem(pos)
+        return self._transform_from_sem_to_fib(sem_pos)
+
+    def _transformFromFIBToMilling(self, pos: Dict[str, float]) -> Dict[str, float]:
+        # simple chain of fib->sem->milling
+        sem_pos = self._transform_from_fib_to_sem(pos)
+        return self._transform_from_sem_to_milling(sem_pos)
+
+    def _transformFromFIBToMeteor(self, pos: Dict[str, float]) -> Dict[str, float]:
+        pass
+
+    def _transformFromMillingToMeteorFIBView(self, pos: Dict[str, float]) -> Dict[str, float]:
+        pass
+
+    def _transformFromMeteorFIBViewToMilling(self, pos: Dict[str, float]) -> Dict[str, float]:
+        pass
+    
+    def _transformFromFIBToSEM(self, pos: Dict[str, float]) -> Dict[str, float]:
+        pass
 
     # TODO: add support for additional transforms:
     # SEM -> FIB
@@ -931,7 +990,9 @@ class MeteorTFS1PostureManager(MeteorPostureManager):
                     fm_target_pos = self._transformFromSEMToMeteor(stage_position)
                 end_pos = fm_target_pos
             elif target_pos_lbl == MILLING:
-                end_pos = self._transform_from_sem_to_milling(stage_position)
+                end_pos = self._transformFromSEMToMilling(stage_position)
+            elif target_pos_lbl == FIB_IMAGING:
+                end_pos = self._transformFromSEMToFIB(stage_position)
         elif current_position == FM_IMAGING:
             if target_pos_lbl == GRID_1:
                 end_pos = self._transformFromSEMToMeteor(sem_grid1_pos)
@@ -940,12 +1001,17 @@ class MeteorTFS1PostureManager(MeteorPostureManager):
             elif target_pos_lbl == SEM_IMAGING:
                 end_pos = self._transformFromMeteorToSEM(stage_position)
             elif target_pos_lbl == MILLING:
-                end_pos = self._transform_from_fm_to_milling(stage_position)
+                end_pos = self._transformFromMeteorToMilling(stage_position)
+            elif target_pos_lbl == FIB_IMAGING:
+                end_pos = self._transformFromMeteorToFIB(stage_position)
         elif current_position == MILLING:
             if target_pos_lbl in [SEM_IMAGING, FM_IMAGING, MILLING]:
                 end_pos = self.to_posture(pos=stage_position, posture=target_pos_lbl)
             # NOTE:grid positions are not supported in milling atm
-
+        elif current_position == FIB_IMAGING:
+            end_pos = self.to_posture(pos=stage_position, posture=target_pos_lbl)
+        elif current_position == FM_FIB_VIEW:
+            end_pos = self.to_posture(pos=stage_position, posture=target_pos_lbl)
             # TODO: @patrick
             # separate the grid positions from the postures
             # add support for FIB_IMAGING
@@ -1136,7 +1202,7 @@ class MeteorTFS1PostureManager(MeteorPostureManager):
                 # TODO: probably a better way would be to forbid grid switching if not in SEM/FM imaging posture
                 sub_moves.append((self.stage, filter_dict({'x', 'y', 'z'}, target_pos)))
                 sub_moves.append((self.stage, filter_dict({'rx', 'rz'}, target_pos)))
-            elif target in (LOADING, SEM_IMAGING, FM_IMAGING, MILLING):
+            elif target in (LOADING, SEM_IMAGING, FM_IMAGING, MILLING, FIB_IMAGING, FM_FIB_VIEW):
                 # save rotation and tilt in SEM before switching to FM imaging
                 # to restore rotation and tilt while switching back from FM -> SEM
                 if current_label == SEM_IMAGING and target == FM_IMAGING:
@@ -1173,7 +1239,6 @@ class MeteorTFS1PostureManager(MeteorPostureManager):
                 if future._task_state == CANCELLED:
                     raise CancelledError()
                 future._task_state = FINISHED
-
 
 class MeteorTFS2PostureManager(MeteorTFS1PostureManager):
     def __init__(self, microscope):
@@ -1469,22 +1534,116 @@ class MeteorTFS3PostureManager(MeteorTFS1PostureManager):
 
         return transformed_pos
 
-    def _transform_from_fib_to_fm(self, pos: Dict[str, float]) -> Dict[str, float]:
+    def _transformFromFIBToMeteor(self, pos: Dict[str, float]) -> Dict[str, float]:
         """
         Transforms the current stage position from the FIB imaging area to the
         meteor/FM imaging area.
         :param pos: (dict str->float) the initial stage position.
         :return: (dict str->float) the transformed position.
         """
-        return NotImplemented
+        stage_md = self.stage.getMetadata()
+        transformed_pos = pos.copy()
+        md_calib = stage_md[model.MD_CALIB]
+        fm_pos_active = self.get_posture_orientation(FM_IMAGING)
 
-    def _transform_from_fm_to_fib(self, pos: Dict[str, float]) -> Dict[str, float]:
+        # check if the stage positions have rz axes
+        if not ("rz" in pos and "rz" in fm_pos_active):
+            raise ValueError(f"The stage position does not have rz axis. pos={pos}, fm_pos_active={fm_pos_active}")
+
+        transformed_pos["x"] = pos["x"] + md_calib["trans-dx"]
+        transformed_pos["y"] = pos["y"] + md_calib["trans-dy"]
+        transformed_pos.update(fm_pos_active)
+
+        return transformed_pos
+
+    def _transformFromMeteorToFIB(self, pos: Dict[str, float]) -> Dict[str, float]:
         """
         Transforms the current stage position from the meteor/FM imaging area to the FIB imaging area.
         :param pos: (dict str->float) the initial stage position.
         :return: (dict str->float) the transformed stage position.
         """
-        return NotImplemented
+        stage_md = self.stage.getMetadata()
+        transformed_pos = pos.copy()
+        md_calib = stage_md[model.MD_CALIB]
+        fib_pos_active = self.get_posture_orientation(FIB_IMAGING)
+
+        # check if the stage positions have rz axes
+        if not ("rz" in pos and "rz" in fib_pos_active):
+            raise ValueError(f"The stage position does not have rz axis. pos={pos}, fib_pos_active={fib_pos_active}")
+
+        transformed_pos["x"] = pos["x"] - md_calib["trans-dx"]
+        transformed_pos["y"] = pos["y"] - md_calib["trans-dy"]
+        transformed_pos.update(fib_pos_active)
+
+        return transformed_pos
+
+    def _transformFromMillingToMeteorFIBView(self, pos: Dict[str, float]) -> Dict[str, float]:
+        """
+        Transforms the current stage position from the FIB imaging area to the
+        meteor/FM imaging area.
+        :param pos: (dict str->float) the initial stage position.
+        :param posture: (int) the final posture of the stage.
+        :return: (dict str->float) the transformed position.
+        """
+        stage_md = self.stage.getMetadata()
+        transformed_pos = pos.copy()
+        md_calib = stage_md[model.MD_CALIB]
+        fm_pos_active = self.get_posture_orientation(FM_FIB_VIEW)
+
+        # check if the stage positions have rz axes
+        if not ("rz" in pos and "rz" in fm_pos_active):
+            raise ValueError(f"The stage position does not have rz axis. pos={pos}, fm_pos_active={fm_pos_active}")
+
+        transformed_pos["x"] = pos["x"] + md_calib["trans-dx"]
+        transformed_pos["y"] = pos["y"] + md_calib["trans-dy"]
+        transformed_pos.update(fm_pos_active)
+
+        return transformed_pos
+
+    def _transformFromMeteorFIBViewToMilling(self, pos: Dict[str, float]) -> Dict[str, float]:
+        """
+        Transforms the current stage position from the meteor/FM imaging area to the FIB imaging area.
+        :param pos: (dict str->float) the initial stage position.
+        :return: (dict str->float) the transformed stage position.
+        """
+        stage_md = self.stage.getMetadata()
+        transformed_pos = pos.copy()
+        md_calib = stage_md[model.MD_CALIB]
+        fib_pos_active = self.get_posture_orientation(MILLING)
+
+        # check if the stage positions have rz axes
+        if not ("rz" in pos and "rz" in fib_pos_active):
+            raise ValueError(f"The stage position does not have rz axis. pos={pos}, fib_pos_active={fib_pos_active}")
+
+        transformed_pos["x"] = pos["x"] - md_calib["trans-dx"]
+        transformed_pos["y"] = pos["y"] - md_calib["trans-dy"]
+        transformed_pos.update(fib_pos_active)
+
+        return transformed_pos
+
+    def _transformFromSEMToFIB(self, pos: Dict[str, float]) -> Dict[str, float]:
+        """
+        Transforms the current stage position from SEM imaging to the FIB imaging area.
+        :param pos: (dict str->float) the initial stage position.
+        :return: (dict str->float) the transformed stage position.
+        """
+        transformed_pos = pos.copy()
+        fib_pos_active = self.get_posture_orientation(FIB_IMAGING)
+
+        transformed_pos.update(fib_pos_active)
+        return transformed_pos
+
+    def _transformFromFIBToSEM(self, pos: Dict[str, float]) -> Dict[str, float]:
+        """
+        Transforms the current stage position from FIB imaging to the SEM imaging area.
+        :param pos: (dict str->float) the initial stage position.
+        :return: (dict str->float) the transformed stage position.
+        """
+        transformed_pos = pos.copy()
+        fib_pos_active = self.get_posture_orientation(SEM_IMAGING)
+
+        transformed_pos.update(fib_pos_active)
+        return transformed_pos
 
 
 class MeteorZeiss1PostureManager(MeteorPostureManager):
