@@ -28,7 +28,7 @@ import yaml
 from odemis import model
 
 # install from: https://github.com/patrickcleeve2/3DCT/blob/refactor
-sys.path.append(f"{os.path.expanduser('~')}/development/3DCT")
+sys.path.append(f"{os.path.expanduser('~')}/development/openfibsem/3DCT")
 
 TDCT_INSTALLED = False
 try:
