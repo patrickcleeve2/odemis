@@ -296,6 +296,9 @@ def add_feature_info_to_filename(feature: CryoFeature, filename: str) -> str:
     path, basename = os.path.split(path_base)
     ptn = f"{basename}-{feature_name}-{feature_status}-{{cnt}}"
 
+    # path = os.path.join(path, feature_name)
+    # os.makedirs(path, exist_ok=True)
+
     return create_filename(path, ptn, ext, count="001")
 
 def _create_fibsem_filename(filename: str, acq_type: str) -> str:

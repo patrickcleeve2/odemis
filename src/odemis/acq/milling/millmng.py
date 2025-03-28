@@ -127,6 +127,14 @@ class TFSMillingTaskManager:
 
             # acquire a reference image at the imaging settings
             if align_at_milling_current:
+                initial_beam_shift = self.fib_stream.emitter.shift.value
+                DEFAULT_ALIGNMENT_AREA = {"left": 0.7, "top": 0.3, "width": 0.25, "height": 0.4}
+                self.fibsem.set_reduced_area_scan_mode(channel=milling_channel,
+                                                       left=DEFAULT_ALIGNMENT_AREA["left"],
+                                                       top=DEFAULT_ALIGNMENT_AREA["top"],
+                                                       width=DEFAULT_ALIGNMENT_AREA["width"],
+                                                       height=DEFAULT_ALIGNMENT_AREA["height"])
+                self.fibsem.run_auto_contrast_brightness(channel=milling_channel)
                 self._future.running_subf = acquire([self.fib_stream])
                 data, _ = self._future.running_subf.result()
                 ref_image = data[0]
@@ -142,11 +150,11 @@ class TFSMillingTaskManager:
             # acquire a new image at the milling settings and align
             if align_at_milling_current:
                 # reset beam shift?
-                self.fib_stream.emitter.shift.value = (0, 0)
-                self._future.running_subf = acquire([self.fib_stream])
-                data, _ = self._future.running_subf.result()
-                new_image = data[0]
-                align_reference_image(ref_image, new_image, self.fib_stream.emitter)
+                for i in range(3):
+                    self._future.running_subf = acquire([self.fib_stream])
+                    data, _ = self._future.running_subf.result()
+                    new_image = data[0]
+                    align_reference_image(ref_image, new_image, self.fib_stream.emitter)
 
                 # save the alignment images
                 if self.filename is not None:
@@ -161,6 +169,8 @@ class TFSMillingTaskManager:
                     post_image = data[0]
                     post_filename = base_filename.replace(".ome.tiff", "-At-Milling-Current-Post-Alignment-FIB.ome.tiff")
                     self._exporter.export(post_filename, post_image)
+                # restore full frame after alignment
+                self.fibsem.set_full_frame_scan_mode(milling_channel)
 
             # draw milling patterns to microscope
             for pattern in settings.generate():
@@ -201,6 +211,7 @@ class TFSMillingTaskManager:
             self.fibsem.set_high_voltage(imaging_voltage, milling_channel)
             self.fibsem.set_field_of_view(imaging_fov, milling_channel)
             self.fibsem.clear_patterns()
+            self.fibsem.emitter.shift.value = initial_beam_shift
         return
 
     def run(self):
@@ -406,7 +417,12 @@ class AutomatedMillingManager(object):
         self._future.set_progress()
 
         filename = self.get_filename(feature, "Milling-Tasks")
-        self._future.running_subf = run_milling_tasks(tasks=milling_tasks,
+        USE_OPENFIBSEM = False # TODO: add option to use openfibsem
+        if USE_OPENFIBSEM:
+            from odemis.acq.milling.openfibsem import run_milling_tasks_openfibsem
+            self._future.running_subf = run_milling_tasks_openfibsem(tasks=milling_tasks)
+        else:
+            self._future.running_subf = run_milling_tasks(tasks=milling_tasks,
                                                       fib_stream=self.fib_stream,
                                                       filename=filename)
         self._future.running_subf.result()
@@ -434,20 +450,15 @@ class AutomatedMillingManager(object):
         self.ion_beam.resolution.value = ref_image.shape[::-1]
 
         # beam shift alignment
-        self._future.running_subf = acquire([self.fib_stream])
-        data, _ = self._future.running_subf.result()
-        new_image = data[0]
+        for i in range(3):
+            self._future.running_subf = acquire([self.fib_stream])
+            data, _ = self._future.running_subf.result()
+            new_image = data[0]
 
-        # roll data by a random amount (for simulation)
-        # import random
-        # x, y = random.randint(0, 100), random.randint(0, 100)
-        # new_image = numpy.roll(new_image, [x, y], axis=[0, 1])
-        # logging.debug(f"Shifted image by {x}, {y} pixels")
+            align_filename = self.get_filename(feature, f"Pre-Alignment-FIB-{i}")
+            self._exporter.export(align_filename, new_image)
 
-        align_filename = self.get_filename(feature, "Pre-Alignment-FIB")
-        self._exporter.export(align_filename, new_image)
-
-        align_reference_image(ref_image, new_image, scanner=self.ion_beam)
+            align_reference_image(ref_image, new_image, scanner=self.ion_beam)
 
         # save post-alignment image
         self._future.running_subf = acquire([self.fib_stream])
