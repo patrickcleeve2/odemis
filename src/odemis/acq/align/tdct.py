@@ -174,8 +174,8 @@ def get_reprojected_poi_coordinate(correlation_results: dict) -> Tuple[float, fl
     :return: the point of interest coordinate in meters
     """
     # get the point of interest coordinate (in microscope coordinates, in metres)
-    poi_coord = correlation_results["output"]["poi"][0]["px_um"]
-    poi_coord = (poi_coord[0] * 1e-6, poi_coord[1] * 1e-6)
+    poi_coord = correlation_results["output"]["poi"][0]["px_m"]
+    logging.debug(f"Point of Interest: {poi_coord}")
     return poi_coord
 
 def parse_3dct_yaml_file(path: str) -> Tuple[float, float]:

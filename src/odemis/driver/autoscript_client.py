@@ -70,6 +70,13 @@ RESOLUTIONS = (
     (1536, 1024),
     (3072, 2048),
     (6144, 4096),
+    (1024, 1024),
+    (1536, 1536),
+    (2048, 2048),
+    (3072, 3072),
+    (4096, 4096),
+    (768, 768),
+    (6144, 6144),
 )
 DETECTOR_RNG = ((768, 512), (6144, 4096))
 
@@ -841,7 +848,7 @@ class SEM(model.HwComponent):
             self.server._pyroClaimOwnership()
             self.server.set_channel(channel)
 
-    def acquire_image(self, channel: str) -> Tuple[numpy.ndarray, Dict[str, Any]]:
+    def acquire_image(self, channel: str, frame_settings: Optional[Dict] = None) -> Tuple[numpy.ndarray, Dict[str, Any]]:
         """
         Acquire an image from the detector (blocking).
         :param channel: Name of one of the channels.
@@ -849,7 +856,7 @@ class SEM(model.HwComponent):
         """
         with self._proxy_access:
             self.server._pyroClaimOwnership()
-            return self.server.acquire_image(channel)
+            return self.server.acquire_image(channel, frame_settings)
 
     def get_last_image(self, channel: str, wait_for_frame: bool = True) -> Tuple[numpy.ndarray, Dict[str, Any]]:
         """
@@ -1122,9 +1129,10 @@ class Scanner(model.Emitter):
         # beam current
         # NOTE: VA is named probeCurrent to match existing API
         beam_current_info = self.parent.beam_current_info(self.channel)
+        beam_current_range = beam_current_info["range"]
         self.probeCurrent = model.FloatContinuous(
             value=self.parent.get_beam_current(self.channel),
-            range=beam_current_info["range"],
+            range=(beam_current_range[0], beam_current_range[-1]),
             unit=beam_current_info["unit"],
             setter=self._setCurrent
         )

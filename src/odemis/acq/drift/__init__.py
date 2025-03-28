@@ -378,6 +378,11 @@ def align_reference_image(
     pixelsize = ref_image.metadata[model.MD_PIXEL_SIZE]
     shift_m = (shift_px[0] * pixelsize[0], shift_px[1] * pixelsize[1])
 
+    # correct for scan rotation influence
+    scan_rotation = scanner.rotation.value
+    if numpy.isclose(scan_rotation, numpy.radians(180)):
+        shift_m = (shift_m[0], -shift_m[1])
+
     previous_shift = scanner.shift.value
     shift = (shift_m[0] + previous_shift[0], shift_m[1] + previous_shift[1])  # m
     scanner.shift.value = shift
