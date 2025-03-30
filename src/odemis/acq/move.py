@@ -367,6 +367,7 @@ class MeteorPostureManager(MicroscopePostureManager):
                 SEM_IMAGING: self._transformFromFIBToSEM,
                 FM_IMAGING: self._transformFromFIBToMeteor,
                 MILLING: self._transformFromFIBToMilling,
+            },
             UNKNOWN: {
                 UNKNOWN: lambda x: x
          }

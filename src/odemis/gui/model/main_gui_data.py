@@ -530,7 +530,7 @@ class CryoMainGUIData(MainGUIData):
 
         # Controls the stage movement based on the imaging mode
         self.posture_manager = MicroscopePostureManager(microscope)
-        if self.role == "meteor" and isinstance(self.posture_manager, MeteorTFS2PostureManager):
+        if self.role == "meteor" and isinstance(self.posture_manager, MeteorTFS3PostureManager):
             self.stage = self.posture_manager.sample_stage
 
         if isinstance(self.posture_manager, MeteorTFS3PostureManager):
