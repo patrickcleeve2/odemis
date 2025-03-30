@@ -167,11 +167,11 @@ HW_SETTINGS_CONFIG = {
                 "event": wx.EVT_SCROLL_CHANGED  # only affects when it's a slider
             }),
             ("probeCurrent", {
-                "label": "Beam current",
-                # The following only affects when it's a slider
-                "event": wx.EVT_SCROLL_CHANGED,
-                "scale": "log",
-                "accuracy": 3,
+                "label": "Beam Current",
+                "control_type": odemis.gui.CONTROL_SLIDER,
+                "type": "float",
+                "scale": "linear",
+                "event": wx.EVT_SCROLL_CHANGED
             }),
             ("spotSize", {
                 "tooltip": "Electron-beam spot size",
