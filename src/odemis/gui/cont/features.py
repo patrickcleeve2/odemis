@@ -22,6 +22,7 @@ from odemis.acq.move import (
     MILLING,
     POSITION_NAMES,
     SEM_IMAGING,
+    FIB_IMAGING,
     MeteorTFS2PostureManager,
 )
 from odemis.dataio.tiff import export
@@ -31,7 +32,7 @@ from odemis.gui.model import TOOL_FEATURE
 from odemis.gui.util import call_in_wx_main
 from odemis.gui.util.widgets import VigilantAttributeConnector
 
-SUPPORTED_POSTURES = [SEM_IMAGING, FM_IMAGING, MILLING]
+SUPPORTED_POSTURES = [SEM_IMAGING, FM_IMAGING, MILLING, FIB_IMAGING]
 
 class CryoFeatureController(object):
     """ controller to handle the cryo feature panel elements
