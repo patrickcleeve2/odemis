@@ -577,10 +577,8 @@ class MeteorPostureManager(MicroscopePostureManager):
         # rotation around x axis: fm = tf, sem = tf_inv
         tf, tf_inv = get_rotation_transforms(rx=rx)
 
-        # NOTE: not yet implemented, see meteor-1100-fibsem-tab
-        sr = 0
-        if not self.use_scan_rotation:
-            sr = 0
+        # get the scan rotation value
+        sr = self._get_scan_rotation()
 
         # get scan rotation matrix (rz -> rx)
         tf_sr, tf_inv_sr = get_rotation_transforms(rx=rx, rz=sr)
@@ -594,6 +592,30 @@ class MeteorPostureManager(MicroscopePostureManager):
                                  SEM_IMAGING: tf_sr,
                                  MILLING: tf_sr,
                                  UNKNOWN: tf_sr}
+    
+    def _get_scan_rotation(self) -> float:
+        """Get the scan rotation value for SEM/FIB, and ensure they match.
+        :return: the scan rotation value in radians"""
+        
+        if not self.use_scan_rotation:
+            return 0
+
+        # need to check if e-beam and ion-beam are available
+        comps = model.getComponents()
+        roles = [comp.role for comp in comps]
+        if not ("e-beam" in roles and "ion-beam" in roles):
+            logging.warning("e-beam and/or ion-beam not available, scan rotation will be set to 0")
+            return 0
+
+        # check if e-beam and ion-beam have the same rotation
+        ebeam = model.getComponent(role='e-beam')
+        ion_beam = model.getComponent(role='ion-beam')
+        sr = ebeam.rotation.value
+        ion_sr = ion_beam.rotation.value
+        if not numpy.isclose(sr, ion_sr, atol=ATOL_ROTATION_POS):
+            raise ValueError(f"The SEM and FIB rotations do not match {sr} != {ion_sr}")
+
+        return sr
 
     def _get_stage_pos(self, sample_val: Dict[str, float], absolute: bool = True) -> Dict[str, float]:
         """
