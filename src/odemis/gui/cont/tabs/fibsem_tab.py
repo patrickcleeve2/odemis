@@ -207,7 +207,7 @@ class FibsemTab(Tab):
         panel.pnl_secom_grid.viewports[1].canvas.Bind(wx.EVT_LEFT_DCLICK, self.on_dbl_click) # bind the double click event
 
         # TODO: replace with current_posture?
-        self.main_data.stage.position.subscribe(self._on_stage_pos, init=True)
+        self.pm.stage.position.subscribe(self._on_stage_pos, init=True)
         self.panel = panel
 
         rx = self.pm.stage.getMetadata()[model.MD_FAV_MILL_POS_ACTIVE]["rx"]

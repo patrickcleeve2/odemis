@@ -533,18 +533,6 @@ class CryoMainGUIData(MainGUIData):
         if self.role == "meteor" and isinstance(self.posture_manager, MeteorTFS3PostureManager):
             self.stage = self.posture_manager.sample_stage
 
-        if isinstance(self.posture_manager, MeteorTFS3PostureManager):
-            self.stage = self.posture_manager.sample_stage
-
-        if isinstance(self.posture_manager, MeteorTFS3PostureManager):
-            self.stage = self.posture_manager.sample_stage
-
-        if isinstance(self.posture_manager, MeteorTFS3PostureManager):
-            self.stage = self.posture_manager.sample_stage
-
-        if isinstance(self.posture_manager, MeteorTFS3PostureManager):
-            self.stage = self.posture_manager.sample_stage
-
         # stage.MD_SAMPLE_CENTERS contains the date in almost the right format, but the
         # position is a dict instead of a tuple. => Convert it, while checking the data.
         # Ex: {"grid 1": {"x": 0.1, "y": -0.2}} -> {"grid 1": (0.1, -0.2)}
