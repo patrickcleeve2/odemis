@@ -787,6 +787,8 @@ def _updateMDFromOME(root, das):
                         mdc[model.MD_OUT_WL] = (owl - 1e-9, owl + 1e-9)
                 else:
                     fl = che.find("Filter")
+                    if fl is None:
+                        fl = che.find("FilterSetRef")
                     if fl is not None:
                         ftype = fl.attrib["Type"]
                         mdc[model.MD_OUT_WL] = ftype
@@ -1600,8 +1602,8 @@ def _addImageElement(root, das, ifd, rois, fname=None, fuuid=None):
             if model.MD_OUT_WL in da.metadata:
                 owl = da.metadata[model.MD_OUT_WL]
                 if isinstance(owl, str):
-                    filter = ET.SubElement(chan, "Filter", attrib={
-                                    "ID": "Filter:%d:%d" % (idnum, subid)})
+                    filter = ET.SubElement(chan, "FilterSetRef", attrib={
+                                    "ID": "FilterSet:%d:%d" % (idnum, subid)})
                     filter.attrib["Type"] = owl
                 elif model.MD_IN_WL in da.metadata:
                     # Use excitation wavelength in case of multiple bands
